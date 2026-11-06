@@ -1,0 +1,154 @@
+# API contract
+
+Base URL: `http://localhost:4000` (env `PORT`). No route prefix. JSON in, JSON out. CORS allows `CORS_ORIGIN` (default `http://localhost:3000`).
+
+All ids are **stable slugs** (never Mongo ObjectIds) so they survive a re-seed and can sit in URLs / localStorage. A visit `id` is the only opaque id.
+
+## Errors
+
+Every error is JSON: `{ "statusCode": number, "error": string, "message": string }`.
+
+Validation failures (400) add `fields`, a map of field name → list of messages, so forms can show them inline:
+
+```json
+{ "statusCode": 400, "error": "Bad Request", "message": "Validation failed",
+  "fields": { "address": ["address must be a name ending in .zz, e.g. tidepool.zz"] } }
+```
+
+| Status | Meaning |
+|---|---|
+| 400 | validation failed (`fields` present) |
+| 404 | nowhere / unknown person |
+| 409 | address already published |
+| 413 | request body over 1 MB |
+
+## Address normalization
+
+Used by every route that takes an address. Rules, applied in order:
+
+1. trim; collapse inner whitespace → invalid if any whitespace remains
+2. lowercase
+3. strip a leading `http://`, `https://` or `web://`
+4. strip any `?query`, `#fragment`, then all trailing `/`
+5. a bare label with no dot (`tidepool`) gets `.zz` appended
+6. **valid** iff it matches `^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+zz$` and is ≤ 100 chars
+
+Anything else (e.g. `example.com`, `a b`, empty) is **not a small-web address**: the web app treats it as an *external link* (shown, never followed) and must not request or record it.
+
+Test vectors (web should re-implement these identically in `web/src/lib/address.ts`):
+
+| input | normalized | valid |
+|---|---|---|
+| `tidepool.zz` | `tidepool.zz` | yes |
+| `  TidePool.ZZ/ ` | `tidepool.zz` | yes |
+| `http://tidepool.zz/` | `tidepool.zz` | yes |
+| `https://Tidepool.zz//` | `tidepool.zz` | yes |
+| `tidepool` | `tidepool.zz` | yes |
+| `tidepool.zz#top` | `tidepool.zz` | yes |
+| `a.b-c.zz` | `a.b-c.zz` | yes |
+| `-bad.zz` | — | no |
+| `example.com` | — | no (external) |
+| `tide pool.zz` | — | no |
+| `` | — | no |
+| `javascript:alert(1)` | — | no |
+
+## Types
+
+```ts
+type Via = 'typed' | 'link' | 'back' | 'forward' | 'history' | 'search';
+
+interface PersonDto {
+  id: string;            // slug, e.g. "ines-varga"
+  name: string;
+  roles: ('browser' | 'author')[];
+}
+
+interface SiteDto {
+  address: string;       // normalized
+  title: string;
+  html: string;          // ALREADY SANITIZED server-side. Still render only inside the sandboxed iframe.
+  author: { id: string; name: string };
+  revision: number;      // 1 on publish, +1 per replace
+  createdAt: string;     // ISO 8601
+  updatedAt: string;
+}
+
+interface SiteSummaryDto {
+  address: string; title: string; author: { id: string; name: string }; createdAt: string;
+}
+
+interface VisitDto {
+  id: string;
+  address: string;       // normalized
+  title: string | null;  // current title of the site, null when found=false
+  at: string;            // ISO 8601, set by the server
+  via: Via;
+  found: boolean;        // computed by the server, never trusted from the client
+}
+```
+
+## Routes
+
+### `GET /health`
+`200 { "ok": true }`
+
+### `GET /people`
+Optional `?role=author|browser`. `200 PersonDto[]`, sorted by name.
+
+### `GET /people/:id`
+`200 PersonDto` · `404` unknown id.
+
+### `GET /sites`
+Directory for a start page. Query: `limit` (1-100, default 50), `offset` (default 0). `200 { total: number; items: SiteSummaryDto[] }`, sorted by address.
+
+### `GET /sites/:address`
+`:address` is URL-encoded and normalized server-side. `200 SiteDto`.
+**`404` = nowhere**, including addresses that are syntactically invalid: `{ "statusCode": 404, "error": "Not Found", "message": "nowhere", "address": "<normalized or raw>" }`. The web app shows its Nowhere page and still records a visit.
+
+### `POST /sites` — publish
+Body:
+```json
+{ "address": "tidepool.zz", "title": "Tidepool", "html": "<h1>…</h1>", "authorId": "ines-varga" }
+```
+Limits: `title` 1-120 chars; `html` 1-100 000 chars; `authorId` must be a person with the `author` role. The address is normalized first, then validated.
+`201 SiteDto` (html is the sanitized result — show this in the preview-after-publish).
+`400` validation · `409` address taken (`message: "address already published"`).
+
+### `PUT /sites/:address` — replace
+**Edit = replace in place.** Same body minus `address`: `{ title, html, authorId }`; `authorId` must match the site's author (no accounts, so this is a courtesy check, not security). Bumps `revision`, sets `updatedAt`, keeps `createdAt`. `200 SiteDto` · `404` · `400`.
+Visits reference the *address*, not a revision, so history stays valid across edits.
+
+### `GET /search?q=…`
+Query: `q` (trimmed, max 200 chars), `limit` (1-50, default 20), `offset` (default 0).
+Full-text over title (weight 10), address (5) and body text (1), ranked by relevance.
+`200`:
+```ts
+{ query: string; total: number; results: Array<{
+    address: string; title: string; author: { id: string; name: string };
+    score: number;
+    snippet: Array<{ text: string; match: boolean }>;  // concatenate `text` for the plain snippet; render match=true segments highlighted
+}> }
+```
+Snippets are **structured segments, never HTML**, so React renders them with no `dangerouslySetInnerHTML`.
+Empty or whitespace-only `q` → `200 { query: "", total: 0, results: [] }` (not an error). No hits → `total: 0, results: []`.
+
+### `GET /people/:id/visits` — history, newest first
+Query: `limit` (1-100, default 50), `cursor` (opaque, from the previous page). `200 { items: VisitDto[]; nextCursor: string | null }`. Keep requesting with `nextCursor` until it is `null` (infinite scroll). Grouping by day is done client-side in the browser's timezone. `404` unknown person.
+
+### `POST /people/:id/visits` — record an arrival
+Body: `{ "address": string, "via": Via, "requestId"?: string }`.
+- Send the address as the user would see it; the server normalizes it. A non-address (`example.com`) → `400`.
+- `found` and `at` are decided by the server.
+- **`requestId`** (client-generated uuid, ≤ 64 chars) makes the call idempotent per person: a repeat with the same `requestId` returns the already-stored visit with `200` instead of creating a second one. Always send it — this is what keeps React strict-mode double effects and retried requests from writing double history.
+`201 VisitDto` (first time) · `200 VisitDto` (replayed requestId) · `400` · `404` unknown person.
+
+Record exactly one visit per page *arrival* (typed, link, search click, history jump, back, forward). Reload and scroll-restore are not arrivals.
+
+## Seeded data (deterministic)
+
+`npm run seed` (from the repo root). Fixed identities you can rely on while building:
+
+- People ids: `ines-varga` (author), `tomas-reyes` (author), `wen-zhao` (author), `odile-mercier` (author), `kofi-mensah` (browser only). `tomas-reyes` has visited nearly every site.
+- Sites include `tidepool.zz`, `ironbread.zz`, `nightfreight.zz`, `mothledger.zz`, `cartographers.zz`, `quietcircuits.zz`, `pepperandrain.zz`, `highline.zz`, `slowclock.zz`, `saltroad.zz`.
+- Some pages link to addresses that never existed (404 → Nowhere).
+- Search `tide` ranks `tidepool.zz` first.
