@@ -164,7 +164,7 @@ test.describe('back, forward and a lost forward', () => {
     await expectShowing(page, 'nightfreight.zz');
   });
 
-  test('each person has a stack of their own', async ({ page }) => {
+  test('each person browses in a session of their own', async ({ page }) => {
     await openAs(page, 'ines-varga', 'tidepool.zz');
     await followLink(page, 'saltroad.zz');
 
@@ -175,27 +175,57 @@ test.describe('back, forward and a lost forward', () => {
     await typeAddress(page, 'ironbread.zz');
     await expectShowing(page, 'ironbread.zz');
     await backButton(page).click();
-    await expect(addressBar(page)).toHaveValue(''); // Tomas's own home, not Ines's pages
-
-    await page.getByLabel('Browsing as').selectOption('ines-varga');
-    await expectShowing(page, 'saltroad.zz'); // exactly where Ines left off
-    await backButton(page).click();
-    await expectShowing(page, 'tidepool.zz');
-    await forwardButton(page).click();
-    await expectShowing(page, 'saltroad.zz');
+    await expect(addressBar(page)).toHaveValue(''); // Tomas's own Home, never Ines's pages
+    await expect(backButton(page)).toBeDisabled();
   });
 
-  test('the real Back button across a person switch returns to the previous person', async ({ page }) => {
+  test('switching person starts them fresh and never reaches the previous trail', async ({ page }) => {
+    await openAs(page, 'ines-varga', 'tidepool.zz');
+    await followLink(page, 'saltroad.zz');
+    await page.getByLabel('Browsing as').selectOption('tomas-reyes');
+    await page.getByLabel('Browsing as').selectOption('ines-varga');
+    await expect(page).toHaveURL(/p=ines-varga/);
+    await expect(addressBar(page)).toHaveValue(''); // a fresh session at Home
+    await expect(backButton(page)).toBeDisabled();
+    await expect(forwardButton(page)).toBeDisabled();
+  });
+
+  test('a person switch does not grow the real browser history', async ({ page }) => {
+    await openAs(page, 'ines-varga', 'tidepool.zz');
+    await followLink(page, 'saltroad.zz');
+    await followLink(page, 'nightfreight.zz');
+    const length = await historyLength(page);
+
+    for (const who of ['tomas-reyes', 'wen-zhao', 'ines-varga', 'kofi-mensah']) {
+      await page.getByLabel('Browsing as').selectOption(who);
+      await expect(page).toHaveURL(new RegExp(`p=${who}`));
+    }
+    expect(await historyLength(page)).toBe(length); // replaced in place, never pushed
+  });
+
+  test("the real Back button never crosses into another person's pages", async ({ page }) => {
     await openAs(page, 'ines-varga', 'tidepool.zz');
     await followLink(page, 'saltroad.zz');
     await page.getByLabel('Browsing as').selectOption('wen-zhao');
     await expect(page).toHaveURL(/p=wen-zhao/);
+    await typeAddress(page, 'ironbread.zz');
+    await expectShowing(page, 'ironbread.zz');
+    const length = await historyLength(page);
 
-    await page.goBack();
-    await expect(page).toHaveURL(/p=ines-varga/);
-    await expectShowing(page, 'saltroad.zz');
-    await expect(page.getByLabel('Browsing as')).toHaveValue('ines-varga');
-    await backButton(page).click();
-    await expectShowing(page, 'tidepool.zz');
+    // press the real Back button well past Wen's first page
+    for (let i = 0; i < 4; i++) {
+      await page.goBack();
+      await page.waitForTimeout(150);
+    }
+
+    await expect(page).toHaveURL(/p=wen-zhao/);
+    await expect(page.getByLabel('Browsing as')).toHaveValue('wen-zhao'); // the selector never flips
+    await expect(addressBar(page)).not.toHaveValue('saltroad.zz');
+    await expect(addressBar(page)).not.toHaveValue('tidepool.zz');
+    expect(await historyLength(page)).toBe(length);
+    // and the toolbar agrees with where the real button left us
+    await expect(backButton(page)).toBeDisabled();
+    await forwardButton(page).click();
+    await expectShowing(page, 'ironbread.zz');
   });
 });

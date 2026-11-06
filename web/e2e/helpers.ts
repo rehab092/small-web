@@ -39,6 +39,11 @@ export async function typeAddress(page: Page, text: string): Promise<void> {
 /** Wait until the address bar and the rendered page agree on `address`. */
 export async function expectShowing(page: Page, address: string): Promise<void> {
   await expect(addressBar(page)).toHaveValue(address);
+  // The bar also shows an address that is still loading, and the old page stays on
+  // screen meanwhile. The URL only changes when the page has arrived and been added
+  // to the history, so waiting for it (and for the loading state to end) means "shown".
+  await expect(page).toHaveURL(new RegExp(`[?&]addr=${address.replace(/\./g, '\\.')}(&|$)`));
+  await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
   await expect(page.locator(SITE_FRAME)).toBeVisible();
   await expect(pageFrame(page).locator('h1').first()).toBeVisible();
 }
