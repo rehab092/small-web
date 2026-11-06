@@ -12,6 +12,8 @@ const securityHeaders = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The e2e run builds into its own directory so it never collides with a dev server.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

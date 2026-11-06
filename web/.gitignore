@@ -1,3 +1,6 @@
 next-env.d.ts
 *.tsbuildinfo
 AGENTS.md
+.next-e2e/
+test-results/
+playwright-report/
