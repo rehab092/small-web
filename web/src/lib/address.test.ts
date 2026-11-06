@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addressParts,
   classifyHref,
   internalPage,
   normalizeAddress,
@@ -96,5 +97,25 @@ describe('internal pages', () => {
     expect(parsePublishAddr(publishAddr('ghostship.zz'))).toBe('ghostship.zz');
     expect(parsePublishAddr(publishAddr())).toBeNull();
     expect(parsePublishAddr('about:home')).toBeNull();
+  });
+});
+
+describe('addressParts', () => {
+  it('splits a site address into scheme, name and .zz', () => {
+    expect(addressParts('tidepool.zz')).toEqual({ scheme: 'web://', host: 'tidepool', tld: '.zz' });
+    expect(addressParts('a.b-c.zz')).toEqual({ scheme: 'web://', host: 'a.b-c', tld: '.zz' });
+  });
+
+  it('draws built-in pages with their own scheme', () => {
+    expect(addressParts('about:history')).toEqual({ scheme: 'about:', host: 'history', tld: '' });
+  });
+
+  it('leaves free text, partial input and other addresses alone', () => {
+    expect(addressParts('')).toBeNull();
+    expect(addressParts('tide')).toBeNull(); // not an address as typed
+    expect(addressParts('salt marsh')).toBeNull();
+    expect(addressParts('example.com')).toBeNull();
+    expect(addressParts('TidePool.zz')).toBeNull(); // only the normalized form is styled
+    expect(addressParts('about:search?q=tide')).toBeNull();
   });
 });

@@ -125,6 +125,29 @@ export function addrFromUrlParams(params: URLSearchParams): string | null {
   return base;
 }
 
+export interface AddressParts {
+  scheme: string;
+  host: string;
+  tld: string;
+}
+
+/**
+ * Split what is in the address bar into its parts, for drawing the scheme, name
+ * and `.zz` in different styles. Only exact small-web addresses and built-in
+ * pages qualify; free text (a search) returns null and is shown as typed.
+ */
+export function addressParts(text: string): AddressParts | null {
+  const trimmed = text.trim();
+  const normalized = normalizeAddress(trimmed);
+  if (normalized && normalized === trimmed && normalized.endsWith('.zz')) {
+    return { scheme: 'web://', host: normalized.slice(0, -'.zz'.length), tld: '.zz' };
+  }
+  if (/^about:[a-z]+$/.test(trimmed)) {
+    return { scheme: 'about:', host: trimmed.slice('about:'.length), tld: '' };
+  }
+  return null;
+}
+
 export type TypedResolution =
   | { kind: 'address'; addr: string }
   | { kind: 'search'; query: string }

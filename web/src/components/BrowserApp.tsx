@@ -11,6 +11,7 @@ import {
   searchAddr,
 } from '@/lib/address';
 import { useBrowser } from '@/lib/use-browser';
+import { useShortcuts } from '@/lib/use-shortcuts';
 import { SiteFrame } from './SiteFrame';
 import { Toolbar } from './Toolbar';
 import { CloseIcon } from './icons';
@@ -23,6 +24,12 @@ import { ErrorView, LoadingView, NowhereView } from './views/StatusViews';
 /** The browser: chrome on top, one page below. */
 export function BrowserApp() {
   const b = useBrowser();
+  const runShortcut = useShortcuts({
+    canBack: b.canBack,
+    canForward: b.canForward,
+    onBack: b.back,
+    onForward: b.forward,
+  });
   const { notice, dismissNotice } = b;
 
   useEffect(() => {
@@ -79,6 +86,7 @@ export function BrowserApp() {
           restoreY={scrollOf()}
           onLink={handleLink}
           onScroll={saveScroll}
+          onKey={runShortcut}
         />
       );
       break;

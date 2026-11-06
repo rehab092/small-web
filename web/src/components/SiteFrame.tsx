@@ -7,6 +7,7 @@ import {
   parseBridgeMessage,
   randomToken,
 } from '@/lib/containment';
+import type { ShortcutAction } from '@/lib/shortcuts';
 
 interface Props {
   /** The (server-sanitized) author markup. Treated as hostile regardless. */
@@ -18,6 +19,8 @@ interface Props {
   onLink?: (href: string) => void;
   /** The page was scrolled to `y`. */
   onScroll?: (y: number) => void;
+  /** A browser shortcut was pressed while focus was inside the page. */
+  onKey?: (action: ShortcutAction) => void;
   /** Label for assistive tech. */
   label?: string;
 }
@@ -29,10 +32,10 @@ interface Props {
  *  - messages are accepted only from this iframe's window, from the opaque
  *    origin a sandboxed frame has, and only in the exact shape we define.
  */
-export function SiteFrame({ html, title, restoreY = 0, onLink, onScroll, label }: Props) {
+export function SiteFrame({ html, title, restoreY = 0, onLink, onScroll, onKey, label }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const handlers = useRef({ onLink, onScroll });
-  handlers.current = { onLink, onScroll };
+  const handlers = useRef({ onLink, onScroll, onKey });
+  handlers.current = { onLink, onScroll, onKey };
 
   const doc = useMemo(() => {
     const frame = randomToken();
@@ -57,6 +60,7 @@ export function SiteFrame({ html, title, restoreY = 0, onLink, onScroll, label }
       if (!msg) return;
       if (msg.type === 'link') handlers.current.onLink?.(msg.href);
       else if (msg.type === 'scroll') handlers.current.onScroll?.(msg.y);
+      else if (msg.type === 'key') handlers.current.onKey?.(msg.action);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
