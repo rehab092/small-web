@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyHref,
+  internalPage,
   normalizeAddress,
+  parsePublishAddr,
   parseSearchAddr,
+  publishAddr,
   resolveTyped,
   searchAddr,
 } from './address';
@@ -77,5 +80,21 @@ describe('search addresses', () => {
   it('round-trips the query', () => {
     expect(parseSearchAddr(searchAddr('tide & pool'))).toBe('tide & pool');
     expect(parseSearchAddr('about:home')).toBeNull();
+  });
+});
+
+describe('internal pages', () => {
+  it('recognises the built-in pages and rejects unknown about: addresses', () => {
+    expect(internalPage('about:home')).toBe('home');
+    expect(internalPage('about:history')).toBe('history');
+    expect(internalPage('about:search?q=tide')).toBe('search');
+    expect(internalPage('about:publish')).toBe('publish');
+    expect(internalPage('about:config')).toBeNull();
+  });
+
+  it('carries a prefilled address through the publish page', () => {
+    expect(parsePublishAddr(publishAddr('ghostship.zz'))).toBe('ghostship.zz');
+    expect(parsePublishAddr(publishAddr())).toBeNull();
+    expect(parsePublishAddr('about:home')).toBeNull();
   });
 });
