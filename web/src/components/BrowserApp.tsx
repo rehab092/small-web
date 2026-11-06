@@ -32,6 +32,35 @@ export function BrowserApp() {
   });
   const { notice, dismissNotice } = b;
 
+  // The page frame cannot match :focus-visible when focus is inside its own document, so
+  // remember (a) whether the last input was the keyboard and (b) whether the frame holds
+  // focus, and let the CSS draw the ring from those two classes.
+  useEffect(() => {
+    const body = document.body;
+    const syncFrameFocus = () =>
+      setTimeout(() => {
+        const active = document.activeElement;
+        body.classList.toggle('frame-focused', Boolean(active && active.classList.contains('site-frame')));
+      }, 0);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') body.classList.add('using-keyboard');
+    };
+    const onPointer = () => body.classList.remove('using-keyboard');
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onPointer);
+    window.addEventListener('blur', syncFrameFocus);
+    window.addEventListener('focus', syncFrameFocus);
+    document.addEventListener('focusin', syncFrameFocus);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onPointer);
+      window.removeEventListener('blur', syncFrameFocus);
+      window.removeEventListener('focus', syncFrameFocus);
+      document.removeEventListener('focusin', syncFrameFocus);
+      body.classList.remove('using-keyboard', 'frame-focused');
+    };
+  }, []);
+
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(dismissNotice, 7000);
@@ -95,6 +124,7 @@ export function BrowserApp() {
         <NowhereView
           addr={page.addr}
           onPublish={(a) => b.go(publishAddr(a), 'link')}
+          onSearch={(q) => b.go(searchAddr(q), 'typed')}
           onHome={() => b.go(HOME_ADDR, 'link')}
         />
       );
@@ -130,6 +160,7 @@ export function BrowserApp() {
             cache={b.viewCache}
             onSearch={(q) => b.go(searchAddr(q), 'typed')}
             onOpen={(a) => b.go(a, 'search')}
+            onHome={() => b.go(HOME_ADDR, 'link')}
             saveScroll={saveScroll}
           />
         );

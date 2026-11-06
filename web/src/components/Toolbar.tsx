@@ -164,6 +164,7 @@ export function Toolbar(props: Props) {
             className={active('search')}
             onClick={() => props.onGo(searchAddr(''))}
             aria-current={page === 'search' ? 'page' : undefined}
+            aria-label="Search"
           >
             <SearchIcon /> <span>Search</span>
           </button>
@@ -172,6 +173,7 @@ export function Toolbar(props: Props) {
             className={active('history')}
             onClick={() => props.onGo(HISTORY_ADDR)}
             aria-current={page === 'history' ? 'page' : undefined}
+            aria-label="History"
           >
             <ClockIcon /> <span>History</span>
           </button>
@@ -180,6 +182,7 @@ export function Toolbar(props: Props) {
             className={active('publish')}
             onClick={() => props.onGo(PUBLISH_ADDR)}
             aria-current={page === 'publish' ? 'page' : undefined}
+            aria-label="Publish"
           >
             <PlusIcon /> <span>Publish</span>
           </button>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { normalizeAddress } from '@/lib/address';
+import { friendlyFieldError } from '@/lib/field-errors';
 import { useScrollMemory } from '@/lib/use-scroll-memory';
 import type { PersonDto, SiteDto } from '@/lib/types';
 import type { ViewCache } from '@/lib/use-browser';
@@ -126,7 +127,10 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
     }
   };
 
-  const fieldError = (name: string) => fields[name]?.[0] ?? clientErrors[name];
+  const fieldError = (name: string) => {
+    const fromApi = fields[name]?.[0];
+    return fromApi ? friendlyFieldError(name, fromApi) : clientErrors[name];
+  };
 
   if (authors.length === 0) {
     return (

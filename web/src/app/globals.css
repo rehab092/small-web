@@ -884,3 +884,313 @@ h2.section-title,
     transition: none !important;
   }
 }
+
+/* ---------- polish: shared ---------- */
+.page-scroll {
+  scrollbar-gutter: stable; /* the page does not shift sideways when a scrollbar appears */
+}
+.page h1,
+.page h2 {
+  overflow-wrap: anywhere;
+}
+kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  text-align: center;
+}
+.btn {
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.btn:hover:not(:disabled) {
+  box-shadow: var(--shadow-1);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.card {
+  box-shadow: var(--shadow-1);
+}
+.card:hover {
+  box-shadow: var(--shadow-2);
+}
+.card__title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.card__address,
+.card__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  background: var(--card);
+  font-size: var(--fs-sm);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.chip:hover {
+  border-color: var(--active);
+  background: var(--active-tint);
+}
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+  padding: var(--sp-6) var(--sp-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  text-align: center;
+}
+.empty h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-xl);
+}
+.empty p {
+  margin: 0;
+  max-width: 52ch;
+  color: var(--ink-soft);
+}
+.searchbox {
+  position: relative;
+}
+.searchbox__hint {
+  position: absolute;
+  right: 124px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.searchbox input {
+  padding-right: 48px;
+}
+
+/* ---------- polish: search results ---------- */
+.result__title mark,
+.result__address mark {
+  background: var(--start-tint);
+  color: inherit;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px #f0cfa4;
+}
+.result__title {
+  overflow-wrap: anywhere;
+}
+.result__address {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- polish: history ---------- */
+.history__filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-4) 0 var(--sp-2);
+}
+.history__filter input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  padding: 0 var(--sp-3) 0 36px;
+}
+.history__filter input:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+  border-color: var(--ring);
+}
+.history__filter svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+.history__filter-note {
+  min-height: 22px;
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+}
+.day__title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: var(--sp-5) 0 var(--sp-2);
+  padding: var(--sp-2) 0;
+  background: linear-gradient(var(--paper) 80%, rgba(241, 244, 243, 0));
+  font-size: var(--fs-md);
+}
+.visit__time {
+  display: flex;
+  flex-direction: column;
+  width: 64px;
+  line-height: 1.25;
+}
+.visit__rel {
+  font-family: var(--body);
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.visit__address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.visit mark {
+  background: var(--start-tint);
+  color: inherit;
+  border-radius: 3px;
+}
+.badge--typed {
+  background: var(--active-tint);
+  color: #1f5fa8;
+}
+.badge--link {
+  background: var(--line-soft);
+}
+.badge--back,
+.badge--forward {
+  background: var(--start-tint);
+  color: #9a5a17;
+}
+.badge--history {
+  background: #ece6f7;
+  color: #5a3f99;
+}
+.badge--search {
+  background: var(--done-tint, #e4f3eb);
+  color: #1f6b44;
+}
+
+/* ---------- polish: Nowhere and status pages ---------- */
+.status__address {
+  display: inline-block;
+  max-width: 100%;
+  padding: var(--sp-1) var(--sp-4);
+  border-radius: 100px;
+  background: var(--alert-tint);
+  color: var(--alert);
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+.status__tips {
+  margin: var(--sp-5) auto 0;
+  max-width: 46ch;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+.status__tips li {
+  position: relative;
+  padding-left: var(--sp-5);
+  margin-bottom: var(--sp-2);
+}
+.status__tips li::before {
+  content: '';
+  position: absolute;
+  left: var(--sp-2);
+  top: 0.6em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+/* ---------- polish: publish ---------- */
+.field__hint--ok {
+  color: var(--done);
+}
+.preview__frame {
+  box-shadow: var(--shadow-1);
+}
+
+/* ---------- polish: small screens ---------- */
+@media (max-width: 560px) {
+  .page {
+    padding: var(--sp-5) var(--sp-4) var(--sp-7);
+  }
+  .status {
+    padding-top: var(--sp-6);
+  }
+  .searchbox {
+    flex-wrap: wrap;
+  }
+  .searchbox .btn {
+    flex: 1 0 100%;
+  }
+  .searchbox__hint {
+    display: none;
+  }
+  .visit {
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+  }
+  .visit__time {
+    width: 54px;
+  }
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 400px) {
+  .visit .badge:not(.badge--alert) {
+    display: none;
+  }
+}
+
+/* the skeleton's place is kept while it waits to appear, so nothing shifts when it does */
+.skeleton-list--hold {
+  min-height: 140px;
+}
+.skeleton-list--hold::before,
+.skeleton-list--hold::after {
+  background: none;
+  animation: none;
+}
+
+/* keyboard focus is visible on the page frame too, not only on the chrome */
+.site-frame:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: -3px;
+}
+
+/* focus inside the frame's own document never matches :focus or :focus-visible on the frame
+   element, so BrowserApp tracks keyboard use and frame focus as two body classes */
+.using-keyboard.frame-focused .site-frame {
+  outline: 3px solid var(--ring);
+  outline-offset: -3px;
+}
