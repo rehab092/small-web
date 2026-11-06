@@ -166,6 +166,72 @@ describe('sanitizeSiteHtml', () => {
   });
 });
 
+/** Every `position` declaration in the markup, value normalized the way a browser would read it. */
+function positionValues(html: string): string[] {
+  const css = html.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, '');
+  return [...css.matchAll(/(?<![\w-])position\s*:\s*([^;}"<]*)/gi)].map((m) => m[1].replace(/!\s*important/i, '').trim().toLowerCase());
+}
+
+describe('position is an allowlist (static | relative | absolute), not a denylist', () => {
+  const BYPASSES: Array<[name: string, css: string]> = [
+    ['comment before the colon', 'position/**/:fixed'],
+    ['comment after the colon', 'position:/* */fixed'],
+    ['comment inside the value gap', 'position:/**/ /**/fixed'],
+    ['comment around sticky', 'position/* x */:/* y */sticky'],
+    ['var() reference', 'position:var(--p)'],
+    ['var() with fallback', 'position:var(--p, fixed)'],
+    ['upper case', 'POSITION:FIXED'],
+    ['!important', 'position:fixed !important'],
+    ['no space before !important', 'position:sticky!important'],
+    ['newline and tabs', 'position\n\t:\n\tfixed'],
+    ['unterminated comment before value', 'position:/* never closed fixed'],
+    ['inherit/unset/revert keywords', 'position:inherit'],
+    ['-webkit-sticky', 'position:-webkit-sticky'],
+  ];
+
+  it.each(BYPASSES)('<style> tag: %s', (_name, decl) => {
+    const out = sanitizeSiteHtml(`<style>.c{${decl}}</style><div class="c">x</div>`);
+    for (const v of positionValues(out)) expect(['static', 'relative', 'absolute']).toContain(v);
+    expect(out).not.toMatch(/fixed|sticky|var\s*\(/i);
+  });
+
+  it.each(BYPASSES)('style attribute: %s', (_name, decl) => {
+    const out = sanitizeSiteHtml(`<div style="${decl.replace(/"/g, '')}">x</div>`);
+    for (const v of positionValues(out)) expect(['static', 'relative', 'absolute']).toContain(v);
+    expect(out).not.toMatch(/fixed|sticky|var\s*\(/i);
+  });
+
+  it('defeats the custom-property indirection: --p:fixed plus position:var(--p)', () => {
+    const out = sanitizeSiteHtml('<style>.c{--p:fixed;position:var(--p)}</style><div class="c" style="--q:sticky;position:var(--q)">x</div>');
+    expect(out).not.toMatch(/var\s*\(/i);
+    for (const v of positionValues(out)) expect(['static', 'relative', 'absolute']).toContain(v);
+  });
+
+  it('defeats an entity-encoded colon in the attribute', () => {
+    const out = sanitizeSiteHtml('<div style="position&#58;fixed;top:0">x</div>');
+    for (const v of positionValues(out)) expect(['static', 'relative', 'absolute']).toContain(v);
+    expect(out).not.toMatch(/fixed/i);
+  });
+
+  it.each(['static', 'relative', 'absolute', 'ABSOLUTE', ' relative '])('keeps the harmless value %j', (value) => {
+    const out = sanitizeSiteHtml(`<style>.c{position:${value}}</style>`);
+    expect(positionValues(out)).toEqual([value.trim().toLowerCase()]);
+  });
+
+  it('does not touch properties that merely end in "position"', () => {
+    const out = sanitizeSiteHtml('<style>.c{background-position:50% 50%;object-position:left top}</style><div style="background-position:center">x</div>');
+    expect(out).toContain('background-position:50% 50%');
+    expect(out).toContain('object-position:left top');
+    expect(out).toContain('background-position:center');
+  });
+
+  it('leaves the rest of the declaration block intact', () => {
+    const out = sanitizeSiteHtml('<style>.c{color:red;position/**/:fixed;margin:0}</style>');
+    expect(out).toContain('color:red');
+    expect(out).toContain('margin:0');
+  });
+});
+
 describe('cleanCss', () => {
   it('removes url(), @import and fixed positioning', () => {
     const out = cleanCss('@import "x.css"; a{background:URL( x )} b{position:Fixed}');

@@ -29,23 +29,49 @@ export const ALLOWED_TAGS = [
 /** Style content that could load resources, run script or break out of the sheet. */
 const DANGEROUS_CSS = /@import|@charset|@namespace|url\s*\(|image-set\s*\(|expression\s*\(|behaviou?r\s*:|-moz-binding|javascript:|vbscript:/gi;
 
-/** Overlay tricks: authors may not take their page out of normal flow. */
-const FIXED_POSITION = /position\s*:\s*(?:fixed|sticky)/gi;
+/** CSS comments, including an unterminated one (which runs to the end, as in a browser). */
+const CSS_COMMENT = /\/\*[\s\S]*?(?:\*\/|$)/g;
+
+/**
+ * A `position` declaration. The lookbehind keeps `background-position` and
+ * `object-position` out of it; the value runs to the next `;` or `}`.
+ */
+const POSITION_DECLARATION = /(?<![\w-])position\s*:\s*([^;}]*)/gi;
+
+/** The only values authors get. fixed/sticky would let a page cover the rest of its own frame. */
+const SAFE_POSITIONS = new Set(['static', 'relative', 'absolute']);
+
+/**
+ * Overlay tricks are blocked with an allowlist, not a denylist: a position
+ * declaration survives only if its value, after dropping `!important` and
+ * normalizing case and space, is exactly static, relative or absolute.
+ * Anything else (fixed, sticky, var(--p), inherit, vendor prefixes, junk)
+ * becomes `position:static`.
+ */
+function restrictPosition(css: string): string {
+  return css.replace(POSITION_DECLARATION, (_match, value: string) => {
+    const normalized = value.replace(/!\s*important\s*$/i, '').trim().toLowerCase();
+    return `position:${SAFE_POSITIONS.has(normalized) ? normalized : 'static'}`;
+  });
+}
 
 /**
  * Neutralize a stylesheet or style attribute.
  *  - `<` is never valid CSS outside strings, and removing it means a sheet can
  *    never close its own <style> element or open a tag (mXSS)
  *  - `\` is removed so escaped spellings (`ur\6c(`) cannot dodge the filters
- *  - dangerous tokens are removed repeatedly until none are left, because
- *    removing one can splice its neighbours into a new one (`u` + `url(` + `rl(`)
+ *  - comments are stripped first, so `position/**\/:fixed` cannot hide from the
+ *    filters that follow
+ *  - dangerous tokens are removed and `position` is allowlisted, repeatedly
+ *    until nothing changes, because removing one thing can splice its
+ *    neighbours into a new one (`u` + `url(` + `rl(`)
  */
 export function cleanCss(css: string): string {
   let out = css.replace(/[<\\]/g, '');
   let previous: string;
   do {
     previous = out;
-    out = out.replace(DANGEROUS_CSS, '').replace(FIXED_POSITION, 'position:static');
+    out = restrictPosition(out.replace(CSS_COMMENT, '').replace(DANGEROUS_CSS, ''));
   } while (out !== previous);
   return out;
 }
