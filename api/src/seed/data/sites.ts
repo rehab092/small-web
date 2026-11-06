@@ -93,7 +93,7 @@ export const SEED_SITES: SeedSite[] = [
 <h2>Alignment</h2>
 <p>A radio that is repaired but not aligned is like a piano that is repaired but not tuned. With a signal generator and a patient ear you adjust each tuned circuit until the loudest point on the dial matches the station printed on the dial. It takes an evening and it is deeply satisfying.</p>
 <h2>Listening</h2>
-<p>The best reward is the sound. A warm valve set on a quiet night picks up stations that have no business reaching you: distant ports, shipping forecasts and, if you are lucky, the dispatchers of the <a href="nightfreight.zz">night freight</a> railway talking trains through the dark. Last winter I spent a weekend cooking and soldering at the same time and learned a great deal about <a href="pepperandrain.zz">pepper and rain</a>, which I recommend for the soldering-adjacent appetite.</p>`),
+<p>The best reward is the sound. A warm valve set on a quiet night picks up stations that have no business reaching you: distant ports, shipping forecasts and, if you are lucky, the dispatchers of the <a href="nightfreight.zz">night freight</a> railway talking trains through the dark. Soldering is hungry work, and my favourite recipes for a long weekend at the bench are collected at <a href="pepperandrain.zz">Pepper and Rain</a>.</p>`),
   },
   {
     address: 'nightfreight.zz',
