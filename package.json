@@ -17,6 +17,7 @@
     "dev:db": "npm run dev:db -w api",
     "seed": "npm run seed -w api",
     "build": "npm run build -w api && npm run build -w web",
-    "test": "npm test -w api && npm test -w web --if-present"
+    "test": "npm run test:scripts && npm test -w api && npm test -w web --if-present",
+    "test:scripts": "node --test scripts/wait-ready.test.mjs"
   }
 }

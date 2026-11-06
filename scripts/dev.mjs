@@ -1,10 +1,17 @@
 // Runs the API and the web app together: `npm run dev`.
 // No dependencies on purpose; stops both when either exits or on Ctrl+C.
+// Prints a "ready" line for each app once it really answers (the API's /health pings MongoDB).
 import { spawn, spawnSync } from 'node:child_process';
+import { waitUntilReady } from './wait-ready.mjs';
+
+const API_PORT = Number(process.env.PORT ?? 4000);
+const WEB_PORT = 3000; // fixed by web's "dev" script
+const READY_TIMEOUT_MS = 120_000;
+const DB_HINT_AFTER_MS = 20_000;
 
 const apps = [
-  { name: 'api', script: 'dev:api' },
-  { name: 'web', script: 'dev:web' },
+  { name: 'api', script: 'dev:api', url: `http://localhost:${API_PORT}/health` },
+  { name: 'web', script: 'dev:web', url: `http://localhost:${WEB_PORT}` },
 ];
 const children = [];
 let stopping = false;
@@ -33,18 +40,35 @@ function stop(code) {
   setTimeout(() => process.exit(code), 300);
 }
 
-for (const { name, script } of apps) {
-  const child = spawn('npm', ['run', script], { stdio: ['ignore', 'pipe', 'pipe'], shell: true });
+for (const app of apps) {
+  const child = spawn('npm', ['run', app.script], { stdio: ['ignore', 'pipe', 'pipe'], shell: true });
   children.push(child);
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
-  prefixLines(name, child.stdout, process.stdout);
-  prefixLines(name, child.stderr, process.stderr);
+  prefixLines(app.name, child.stdout, process.stdout);
+  prefixLines(app.name, child.stderr, process.stderr);
   child.on('exit', (code) => {
-    if (!stopping) console.error(`[${name}] exited with code ${code}; stopping the other app`);
+    if (!stopping) console.error(`[${app.name}] exited with code ${code}; stopping the other app`);
     stop(code ?? 1);
   });
 }
+
+const readiness = apps.map(async (app) => {
+  const ok = await waitUntilReady({
+    url: app.url,
+    timeoutMs: READY_TIMEOUT_MS,
+    isStopped: () => stopping,
+    // only the api depends on MongoDB; its /health answers 503 until the database responds
+    slowAfterMs: app.name === 'api' ? DB_HINT_AFTER_MS : Infinity,
+    onSlow: () => console.log('[dev] the api is not ready yet: is MongoDB running? (npm run dev:db, or docker compose up -d)'),
+  });
+  if (ok) console.log(`[dev] ${app.name} ready: ${app.url.replace(/\/health$/, '')}`);
+  else if (!stopping) console.error(`[dev] ${app.name} did not become ready within ${READY_TIMEOUT_MS / 1000} s (${app.url})`);
+  return ok;
+});
+Promise.all(readiness).then((results) => {
+  if (!stopping && results.every(Boolean)) console.log(`[dev] ready: web http://localhost:${WEB_PORT}  api http://localhost:${API_PORT}`);
+});
 
 process.on('SIGINT', () => stop(0));
 process.on('SIGTERM', () => stop(0));

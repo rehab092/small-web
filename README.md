@@ -53,7 +53,7 @@ npm run dev:web     # http://localhost:3000
 ## Test
 
 ```bash
-npm test                    # api (jest) and web (vitest)
+npm test                    # runner scripts (node:test), api (jest) and web (vitest)
 npm run test -w api
 npm run test -w web
 ```
