@@ -43,7 +43,7 @@
     "moduleFileExtensions": ["js", "json", "ts"],
     "rootDir": ".",
     "testRegex": "(src|test)/.*[.]spec[.]ts$",
-    "transform": { "^.+\.ts$": ["ts-jest", { "diagnostics": true }] },
+    "transform": { "^.+[.]ts$": ["ts-jest", { "diagnostics": true }] },
     "testEnvironment": "node",
     "testTimeout": 120000
   }
