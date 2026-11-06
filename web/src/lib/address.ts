@@ -96,6 +96,35 @@ export function parseSearchAddr(addr: string): string | null {
   return q ?? '';
 }
 
+/**
+ * How a stack address is written into the page URL. An internal address such as
+ * `about:search?q=tide%20pool` is split into its page and its parameters, so the
+ * URL reads `?addr=about:search&q=tide+pool` and the query is encoded exactly once
+ * (encoding the whole address again produced `%2520`).
+ */
+export function addrToUrlParams(addr: string): URLSearchParams {
+  const params = new URLSearchParams();
+  const cut = addr.indexOf('?');
+  if (!isInternalAddr(addr) || cut < 0) {
+    params.set('addr', addr);
+    return params;
+  }
+  params.set('addr', addr.slice(0, cut));
+  new URLSearchParams(addr.slice(cut + 1)).forEach((value, name) => {
+    if (name !== 'addr' && name !== 'p') params.set(name, value);
+  });
+  return params;
+}
+
+/** The inverse of addrToUrlParams; null when the URL carries no address. */
+export function addrFromUrlParams(params: URLSearchParams): string | null {
+  const base = params.get('addr');
+  if (!base) return null;
+  if (base === 'about:search') return searchAddr(params.get('q') ?? '');
+  if (base === PUBLISH_ADDR) return publishAddr(params.get('address') ?? undefined);
+  return base;
+}
+
 export type TypedResolution =
   | { kind: 'address'; addr: string }
   | { kind: 'search'; query: string }

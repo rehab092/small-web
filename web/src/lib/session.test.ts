@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { HOME_ADDR } from './address';
+import { HOME_ADDR, publishAddr, searchAddr } from './address';
 import { canBack, canForward, current } from './history-stack';
 import {
   BrowserSession,
   MemoryStackStore,
+  defaultUrlFor,
   parseLocation,
   type HistoryLike,
   type Snapshot,
@@ -244,8 +245,8 @@ describe('BrowserSession: restore on return', () => {
   });
 });
 
-describe('BrowserSession: people have separate stacks', () => {
-  it('switching person gives them a stack of their own', () => {
+describe('BrowserSession: a person switch is a session boundary', () => {
+  it('gives the new person a fresh one-entry stack at Home', () => {
     const t = setup();
     start(t, 'ines', 'a.zz');
     t.session.navigate('b.zz', 'link');
@@ -255,63 +256,126 @@ describe('BrowserSession: people have separate stacks', () => {
     expect(t.session.activePerson).toBe('tomas');
     expect(t.addrs()).toEqual([HOME_ADDR]);
     expect(canBack(t.session.activeStack)).toBe(false);
-    expect(t.store.get('ines')?.stack.entries.map((e) => e.addr)).toEqual(['a.zz', 'b.zz']);
+    expect(canForward(t.session.activeStack)).toBe(false);
   });
 
-  it('switching back restores the first person exactly, forward history included', () => {
+  it('replaces the browser entry: no push, no stack copy in the real history', () => {
     const t = setup();
     start(t, 'ines', 'a.zz');
-    ['b.zz', 'c.zz'].forEach((a) => t.session.navigate(a, 'link'));
-    t.session.back();
-    t.flush();
+    ['b.zz', 'c.zz', 'd.zz'].forEach((a) => t.session.navigate(a, 'link'));
+    const before = t.hist.entries.length;
+    const pos = t.hist.pos;
+
     t.session.switchPerson('tomas');
-    t.session.navigate('t1.zz', 'typed');
-    t.flush();
+    t.session.switchPerson('wen');
     t.session.switchPerson('ines');
     t.flush();
-    expect(t.session.activePerson).toBe('ines');
-    expect(t.shown()).toBe('b.zz');
-    expect(canForward(t.session.activeStack)).toBe(true);
-    expect(canBack(t.session.activeStack)).toBe(true);
+
+    expect(t.hist.entries.length).toBe(before); // history length unchanged by switching
+    expect(t.hist.pos).toBe(pos); // still on the same real entry
+    expect(t.hist.url).toBe('/?p=ines&addr=about%3Ahome');
   });
 
-  it('toolbar back after a person switch round trip lands on the right page', () => {
-    const t = setup();
-    start(t, 'ines', 'a.zz');
-    ['b.zz', 'c.zz'].forEach((a) => t.session.navigate(a, 'link'));
-    t.session.switchPerson('tomas');
-    t.session.navigate('t1.zz', 'typed');
-    t.session.switchPerson('ines');
-    t.flush();
-    expect(t.shown()).toBe('c.zz');
-    t.session.back();
-    t.flush();
-    expect(t.shown()).toBe('b.zz');
-    t.session.back();
-    t.flush();
-    expect(t.shown()).toBe('a.zz');
-    t.session.forward();
-    t.flush();
-    expect(t.shown()).toBe('b.zz');
-  });
-
-  it('the real Back button after a switch returns to the previous person, not a mixed stack', () => {
+  it('real Back after a switch never crosses into the previous person', () => {
     const t = setup();
     start(t, 'ines', 'a.zz');
     t.session.navigate('b.zz', 'link');
     t.session.switchPerson('tomas');
-    t.flush();
-    t.hist.back(); // browser Back across the person boundary
-    t.flush();
-    expect(t.session.activePerson).toBe('ines');
-    expect(t.shown()).toBe('b.zz');
-    expect(t.snaps.at(-1)?.cause).toBe('switch');
+    t.session.navigate('t1.zz', 'typed');
+    const snapsBefore = t.snaps.length;
+
+    for (let i = 0; i < 3; i++) {
+      t.hist.back();
+      t.flush();
+    }
+
+    // the first real Back reaches Tomas's Home; the next ones hit Ines's old
+    // entries and are bounced straight back, so Tomas never leaves his own stack
+    expect(t.session.activePerson).toBe('tomas');
+    expect(t.addrs()).toEqual([HOME_ADDR, 't1.zz']);
+    expect(t.shown()).toBe(HOME_ADDR);
+    expect(t.hist.state).toMatchObject({ person: 'tomas' });
+    // nothing after the switch was ever shown for anyone but Tomas
+    expect(t.snaps.slice(snapsBefore).every((s) => s.person === 'tomas')).toBe(true);
   });
 
-  it('switching to the person already active does nothing', () => {
+  it('real Back from the first page of a new person stays put', () => {
     const t = setup();
-    start(t);
-    expect(t.session.switchPerson('ines')).toBeNull();
+    start(t, 'ines', 'a.zz');
+    t.session.navigate('b.zz', 'link');
+    t.session.switchPerson('tomas');
+    const snapsBefore = t.snaps.length;
+
+    t.hist.back();
+    t.flush();
+    expect(t.session.activePerson).toBe('tomas');
+    expect(t.shown()).toBe(HOME_ADDR);
+    expect(t.snaps.length).toBe(snapsBefore);
+    expect(t.hist.state).toMatchObject({ person: 'tomas' });
+  });
+
+  it('real Forward into the old person is bounced too', () => {
+    const t = setup();
+    start(t, 'ines', 'a.zz');
+    ['b.zz', 'c.zz'].forEach((a) => t.session.navigate(a, 'link'));
+    t.session.back();
+    t.session.back();
+    t.flush(); // Ines is on a.zz with b.zz and c.zz ahead in the real history
+    t.session.switchPerson('tomas'); // replaces the a.zz entry
+
+    t.hist.forward(); // would land on Ines's b.zz
+    t.flush();
+    expect(t.session.activePerson).toBe('tomas');
+    expect(t.shown()).toBe(HOME_ADDR);
+    expect(t.hist.state).toMatchObject({ person: 'tomas' });
+  });
+
+  it('the new person has working toolbar Back and Forward of their own', () => {
+    const t = setup();
+    start(t, 'ines', 'a.zz');
+    t.session.navigate('b.zz', 'link');
+    t.session.switchPerson('tomas');
+    ['t1.zz', 't2.zz'].forEach((a) => t.session.navigate(a, 'typed'));
+
+    t.session.back();
+    t.flush();
+    expect(t.shown()).toBe('t1.zz');
+    t.session.back();
+    t.flush();
+    expect(t.shown()).toBe(HOME_ADDR);
+    expect(t.session.back()).toBe(false); // nothing earlier in Tomas's stack
+    t.session.forward();
+    t.session.forward();
+    t.flush();
+    expect(t.shown()).toBe('t2.zz');
+  });
+
+  it('switching back to a person starts them fresh, never mixing the old trail', () => {
+    const t = setup();
+    start(t, 'ines', 'a.zz');
+    ['b.zz', 'c.zz'].forEach((a) => t.session.navigate(a, 'link'));
+    t.session.switchPerson('tomas');
+    t.session.switchPerson('ines');
+    expect(t.addrs()).toEqual([HOME_ADDR]);
+    expect(canBack(t.session.activeStack)).toBe(false);
+    t.hist.back();
+    t.flush();
+    expect(t.session.activePerson).toBe('ines');
+    expect(t.addrs()).toEqual([HOME_ADDR]);
+  });
+
+  it('a reload after a switch keeps the new person and their position', () => {
+    const t = setup();
+    start(t, 'ines', 'a.zz');
+    t.session.switchPerson('tomas');
+    t.session.navigate('t1.zz', 'typed');
+
+    const reloaded = setup(t);
+    const snap = reloaded.session.start(parseLocation(t.hist.url.slice(t.hist.url.indexOf('?'))), 'ines');
+    expect(snap.cause).toBe('restore');
+    expect(reloaded.session.activePerson).toBe('tomas');
+    expect(reloaded.shown()).toBe('t1.zz');
+    expect(canBack(reloaded.session.activeStack)).toBe(true);
   });
 
   it('opening a URL for another person starts that person in their own stack', () => {
@@ -321,5 +385,50 @@ describe('BrowserSession: people have separate stacks', () => {
     other.session.start({ person: 'tomas', addr: 'q.zz' }, 'ines');
     expect(other.session.activePerson).toBe('tomas');
     expect(other.addrs()).toEqual(['q.zz']);
+  });
+});
+
+describe('page URLs encode the address exactly once', () => {
+  const urlOf = (addr: string) => defaultUrlFor('ines', { addr });
+
+  it('writes a search query once, with no double encoding', () => {
+    const url = urlOf(searchAddr('xyzzy plugh nothinghere'));
+    expect(url).toBe('/?p=ines&addr=about%3Asearch&q=xyzzy+plugh+nothinghere');
+    expect(url).not.toContain('%25');
+  });
+
+  it('round-trips awkward queries through the URL', () => {
+    const queries = ['tide', 'salt & pepper', '100% sure', 'a+b=c', 'what?', 'üñïçødé 潮', "o'clock", '#hash', ''];
+    for (const q of queries) {
+      const url = urlOf(searchAddr(q));
+      // a literal % is encoded once (%25); nothing is ever encoded twice (%2520, %253A ...)
+      if (!q.includes('%')) expect(url).not.toContain('%25');
+      expect(url).not.toMatch(/%25[0-9A-F]{2}/);
+      expect(parseLocation(url.slice(url.indexOf('?')))).toEqual({
+        person: 'ines',
+        addr: searchAddr(q),
+      });
+    }
+  });
+
+  it('round-trips plain addresses, internal pages and the publish prefill', () => {
+    const addrs = ['tidepool.zz', HOME_ADDR, 'about:history', 'about:publish', publishAddr('ghostship.zz')];
+    for (const addr of addrs) {
+      const url = urlOf(addr);
+      expect(url).not.toContain('%25');
+      expect(parseLocation(url.slice(url.indexOf('?'))).addr).toBe(addr);
+    }
+  });
+
+  it('a search entry survives a reload with its query intact', () => {
+    const t = setup();
+    start(t, 'ines', 'a.zz');
+    t.session.navigate(searchAddr('rock pools & more'), 'typed');
+    expect(t.hist.url).not.toContain('%25');
+
+    const reloaded = setup(t);
+    const snap = reloaded.session.start(parseLocation(t.hist.url.slice(t.hist.url.indexOf('?'))), 'ines');
+    expect(snap.cause).toBe('restore');
+    expect(snap.entry.addr).toBe(searchAddr('rock pools & more'));
   });
 });

@@ -1,26 +1,41 @@
 /**
- * Browser session: per-person history stacks kept in lockstep with the real
- * `window.history`, so the toolbar's Back/Forward and the browser's own
+ * Browser session: one history stack per browsing session, kept in lockstep with
+ * the real `window.history`, so the toolbar's Back/Forward and the browser's own
  * Back/Forward button are the same thing.
  *
  * How the two stay in sync ("no double entries")
- *  - every navigation is exactly one `pushState`, made synchronously in the
- *    click/Enter handler (so the browser counts it as user initiated);
+ *  - every navigation is exactly one `pushState`;
  *  - the toolbar never moves the stack itself: Back/Forward call
  *    `history.back()/forward()` and the resulting `popstate` is the single
  *    place the index changes. A real Back press takes the same path;
- *  - each pushed browser entry carries `{person, mirror, entryId}` in
- *    `history.state`; `entryId` finds the stack entry, `mirror` proves the
- *    browser entries still line up with that stack;
- *  - switching person pushes a rebuilt, contiguous copy of that person's stack
- *    (and steps back to the right entry) under a fresh `mirror` token. Entries
- *    from an older mirror found later are re-aligned the same way.
+ *  - each browser entry we own carries `{person, mirror, entryId, pos}` in
+ *    `history.state`: `entryId` finds the stack entry, `mirror` proves the entry
+ *    belongs to the *current* session, and `pos` is its position in the real
+ *    history (one more than the entry before it).
+ *
+ * Switching person is a session boundary, not a navigation
+ *  - the new person starts a fresh stack (one entry, Home) under a new `mirror`;
+ *  - the browser entry being shown is *replaced* (`replaceState`): nothing is
+ *    pushed, so the real history does not grow and no stack is copied into it;
+ *  - entries from before the boundary stay in the real history (a page cannot
+ *    delete them) but belong to another session. If a real Back/Forward lands on
+ *    one, the session steps straight back to its own entry with
+ *    `history.go(ownPos - theirPos)`. Back can therefore never cross into another
+ *    person's stack, exactly like the toolbar's Back, which is disabled at the
+ *    first page of the stack.
  *
  * The class has no React or DOM dependency; `HistoryLike` and `StackStore`
  * are injected so it is tested against a fake browser history.
  */
 
-import { HOME_ADDR, internalPage, isInternalAddr, normalizeAddress } from './address';
+import {
+  HOME_ADDR,
+  addrFromUrlParams,
+  addrToUrlParams,
+  internalPage,
+  isInternalAddr,
+  normalizeAddress,
+} from './address';
 import {
   EMPTY_STACK,
   current,
@@ -46,6 +61,8 @@ export interface HistoryLike {
 export interface PersistedStack {
   stack: Stack;
   mirror: string;
+  /** Position in the real history of the current entry. */
+  pos: number;
 }
 
 export interface StackStore {
@@ -59,6 +76,7 @@ export interface NavState {
   person: string;
   mirror: string;
   entryId: string;
+  pos: number;
 }
 
 export interface Location {
@@ -72,7 +90,7 @@ export interface Location {
  *  - restore:  a reload of a page we already track (not an arrival)
  *  - navigate: a new page pushed on the stack (arrival with the caller's `via`)
  *  - back / forward: the index moved (arrival via back/forward)
- *  - switch:   another person's stack is now active (not an arrival)
+ *  - switch:   another person's fresh session is now active (not an arrival)
  *  - reload:   navigating to the page already shown (not an arrival)
  */
 export type Cause = 'enter' | 'restore' | 'navigate' | 'back' | 'forward' | 'switch' | 'reload';
@@ -94,14 +112,17 @@ export interface SessionDeps {
   urlFor?: (person: string, entry: Pick<StackEntry, 'addr'>) => string;
 }
 
+/** `/?p=<person>&addr=<page>[&q=…]`, every value encoded exactly once. */
 export function defaultUrlFor(person: string, entry: Pick<StackEntry, 'addr'>): string {
-  return `/?p=${encodeURIComponent(person)}&addr=${encodeURIComponent(entry.addr)}`;
+  const params = new URLSearchParams({ p: person });
+  addrToUrlParams(entry.addr).forEach((value, name) => params.set(name, value));
+  return `/?${params.toString()}`;
 }
 
-/** Read `?p=&addr=` from a location search string. */
+/** Read the person and address from a location search string. */
 export function parseLocation(search: string): Location {
   const params = new URLSearchParams(search);
-  return { person: params.get('p'), addr: params.get('addr') };
+  return { person: params.get('p'), addr: addrFromUrlParams(params) };
 }
 
 function asNavState(value: unknown): NavState | null {
@@ -112,7 +133,8 @@ function asNavState(value: unknown): NavState | null {
     v.sw === 1 &&
     typeof v.person === 'string' &&
     typeof v.mirror === 'string' &&
-    typeof v.entryId === 'string'
+    typeof v.entryId === 'string' &&
+    typeof v.pos === 'number'
   ) {
     return v as NavState;
   }
@@ -130,6 +152,8 @@ export class BrowserSession {
   private person = '';
   private stack: Stack = EMPTY_STACK;
   private mirror = '';
+  /** Position in the real history of the entry being shown. */
+  private pos = 0;
   /** Traversals we asked the browser for that have not produced a popstate yet. */
   private pending = 0;
   private seq = 0;
@@ -166,8 +190,11 @@ export class BrowserSession {
       state.mirror === persisted.mirror &&
       indexOfId(persisted.stack, state.entryId) >= 0
     ) {
-      this.adopt(person, persisted);
-      this.stack = goToId(this.stack, state.entryId);
+      this.person = person;
+      this.stack = goToId(persisted.stack, state.entryId);
+      this.mirror = persisted.mirror;
+      this.pos = state.pos;
+      this.pending = 0;
       this.persist();
       return this.emit('restore', null);
     }
@@ -184,6 +211,7 @@ export class BrowserSession {
     if (here.addr === addr) return this.emit('reload', null);
     const entry = { id: this.deps.newId(), addr };
     this.stack = push(this.stack, entry);
+    this.pos += 1;
     this.deps.history.pushState(this.stateFor(entry.id), '', this.urlFor(this.person, entry));
     this.persist();
     return this.emit('navigate', via);
@@ -204,17 +232,20 @@ export class BrowserSession {
     return true;
   }
 
-  /** Make `person` the active browser identity, with a stack of their own. */
+  /**
+   * Make `person` the browsing identity. This is a session boundary: they get a
+   * fresh one-entry stack at Home and the current browser entry is replaced, so
+   * the real history neither grows nor mixes two people's pages.
+   */
   switchPerson(person: string): Snapshot | null {
     if (person === this.person) return null;
-    this.persist();
-    const persisted = this.deps.store.get(person);
-    const stack =
-      persisted?.stack ?? push(EMPTY_STACK, { id: this.deps.newId(), addr: HOME_ADDR });
+    const entry = { id: this.deps.newId(), addr: HOME_ADDR };
     this.person = person;
-    this.stack = stack;
+    this.stack = push(EMPTY_STACK, entry);
+    this.mirror = this.deps.newId();
     this.pending = 0;
-    this.rebuild(stack.index);
+    this.deps.history.replaceState(this.stateFor(entry.id), '', this.urlFor(person, entry));
+    this.persist();
     return this.emit('switch', null);
   }
 
@@ -232,75 +263,58 @@ export class BrowserSession {
     const nav = asNavState(state);
     if (!nav) return this.enter(loc.person ?? this.person, sanitizeAddr(loc.addr), this.persisted(loc.person ?? this.person));
 
-    const sameStack = nav.person === this.person;
-    const persisted = sameStack ? { stack: this.stack, mirror: this.mirror } : this.deps.store.get(nav.person);
-    const target = persisted ? indexOfId(persisted.stack, nav.entryId) : -1;
-    if (!persisted || target < 0) {
-      return this.enter(nav.person, sanitizeAddr(loc.addr), this.deps.store.get(nav.person));
+    const target = nav.mirror === this.mirror && nav.person === this.person ? indexOfId(this.stack, nav.entryId) : -1;
+    if (target < 0) {
+      this.bounce(nav); // an entry from before a session boundary: never cross into it
+      return null;
     }
 
-    const here = current(this.stack);
-    if (sameStack && here?.id === nav.entryId) return null; // echo of a rebuild
-
+    this.pos = nav.pos;
+    if (target === this.stack.index) return null; // echo of our own bounce
     const previous = this.stack.index;
-    if (!sameStack) this.adopt(nav.person, persisted);
     this.stack = goToId(this.stack, nav.entryId);
-    if (nav.mirror !== this.mirror) this.rebuild(target); // stale entry: realign the browser
-    else this.persist();
-
-    if (!sameStack) return this.emit('switch', null);
-    return this.emit(target < previous ? 'back' : 'forward', target < previous ? 'back' : 'forward');
+    this.persist();
+    const direction = target < previous ? 'back' : 'forward';
+    return this.emit(direction, direction);
   }
 
   // --- internals -----------------------------------------------------------
 
   private persisted(person: string): PersistedStack | null {
-    return person === this.person ? { stack: this.stack, mirror: this.mirror } : this.deps.store.get(person);
+    if (person === this.person && this.mirror) {
+      return { stack: this.stack, mirror: this.mirror, pos: this.pos };
+    }
+    return this.deps.store.get(person);
   }
 
-  private adopt(person: string, persisted: PersistedStack): void {
-    this.person = person;
-    this.stack = persisted.stack;
-    this.mirror = persisted.mirror;
-    this.pending = 0;
+  /** Step the real history back to our own entry after it landed on a foreign one. */
+  private bounce(foreign: NavState): void {
+    const delta = this.pos - foreign.pos;
+    if (delta !== 0) this.deps.history.go(delta);
   }
 
   /** A document load whose history entry we have not seen before. */
   private enter(person: string, addr: string, persisted: PersistedStack | null): Snapshot {
     const base = persisted?.stack ?? EMPTY_STACK;
+    const here = current(base);
+    const reuse = Boolean(here && here.addr === addr);
+    const entry = reuse && here ? here : { id: this.deps.newId(), addr };
     this.person = person;
     this.mirror = persisted?.mirror ?? this.deps.newId();
+    this.stack = reuse ? base : push(base, entry);
+    this.pos = persisted ? persisted.pos + (reuse ? 0 : 1) : 0;
     this.pending = 0;
-    const here = current(base);
-    const entry = here && here.addr === addr ? here : { id: this.deps.newId(), addr };
-    this.stack = here && here.addr === addr ? base : push(base, entry);
     this.deps.history.replaceState(this.stateFor(entry.id), '', this.urlFor(person, entry));
     this.persist();
     return this.emit('enter', isInternalAddr(addr) ? null : 'typed');
   }
 
-  /**
-   * Re-create the active stack in the browser as one contiguous run of fresh
-   * entries (new mirror token) and step back to `index`.
-   */
-  private rebuild(index: number): void {
-    this.mirror = this.deps.newId();
-    this.stack = { ...this.stack, index };
-    const { entries } = this.stack;
-    for (const entry of entries) {
-      this.deps.history.pushState(this.stateFor(entry.id), '', this.urlFor(this.person, entry));
-    }
-    const delta = index - (entries.length - 1);
-    if (delta < 0) this.deps.history.go(delta);
-    this.persist();
-  }
-
   private stateFor(entryId: string): NavState {
-    return { sw: 1, person: this.person, mirror: this.mirror, entryId };
+    return { sw: 1, person: this.person, mirror: this.mirror, entryId, pos: this.pos };
   }
 
   private persist(): void {
-    this.deps.store.set(this.person, { stack: this.stack, mirror: this.mirror });
+    this.deps.store.set(this.person, { stack: this.stack, mirror: this.mirror, pos: this.pos });
   }
 
   private emit(cause: Cause, arrival: Via | null): Snapshot {
@@ -339,9 +353,10 @@ export class WebStackStore implements StackStore {
     try {
       const raw = this.storage.getItem(`sw:stack:${person}`);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as { stack?: unknown; mirror?: unknown };
+      const parsed = JSON.parse(raw) as { stack?: unknown; mirror?: unknown; pos?: unknown };
       const stack = parseStack(parsed.stack);
-      return stack && typeof parsed.mirror === 'string' ? { stack, mirror: parsed.mirror } : null;
+      if (!stack || typeof parsed.mirror !== 'string') return null;
+      return { stack, mirror: parsed.mirror, pos: typeof parsed.pos === 'number' ? parsed.pos : 0 };
     } catch {
       return null;
     }
