@@ -11,7 +11,7 @@ export class Visit {
   @Prop({ required: true }) personId!: string;
   @Prop({ required: true }) address!: string;
   @Prop({ required: true }) at!: Date;
-  @Prop({ required: true, enum: VIA_VALUES }) via!: Via;
+  @Prop({ type: String, required: true, enum: VIA_VALUES }) via!: Via;
   @Prop({ required: true }) found!: boolean;
   /** Client-generated idempotency key; unique per person when present. */
   @Prop() requestId?: string;
