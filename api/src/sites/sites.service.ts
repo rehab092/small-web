@@ -30,6 +30,19 @@ export function prepareSite(input: SiteInput): PreparedSite {
   return { address: input.address, title: input.title, html, text: extractText(html), authorId: input.authorId };
 }
 
+export const NOTHING_TO_SHOW = 'nothing left to show after removing disallowed content';
+
+/** A letter, digit, punctuation or symbol: zero-width and blank characters do not count as content. */
+const VISIBLE_CHARACTER = /[\p{L}\p{N}\p{P}\p{S}]/u;
+
+/**
+ * True when something readable survives sanitizing. Checked in the service, before
+ * Mongoose ever sees the document, so an empty page is a 400 and never a 500.
+ */
+export function hasVisibleContent(page: Pick<PreparedSite, 'html' | 'text'>): boolean {
+  return page.html.trim() !== '' && VISIBLE_CHARACTER.test(page.text);
+}
+
 @Injectable()
 export class SitesService implements OnModuleInit {
   constructor(
@@ -67,8 +80,11 @@ export class SitesService implements OnModuleInit {
   async publish(dto: PublishSiteDto): Promise<SiteDto> {
     const norm = normalizeAddress(dto.address);
     if (!norm.valid) throw fieldErrors({ address: [ADDRESS_HINT] });
-    await this.assertAuthor(dto.authorId);
     const prepared = prepareSite({ address: norm.address, title: dto.title, html: dto.html, authorId: dto.authorId });
+    const problems: Record<string, string[]> = {};
+    if (!(await this.people.hasRole(dto.authorId, 'author'))) problems.authorId = ['authorId must be a person with the author role'];
+    if (!hasVisibleContent(prepared)) problems.html = [NOTHING_TO_SHOW];
+    if (Object.keys(problems).length > 0) throw fieldErrors(problems);
     const now = new Date();
     try {
       const created = await this.model.create({ ...prepared, revision: 1, createdAt: now, updatedAt: now });
@@ -86,6 +102,7 @@ export class SitesService implements OnModuleInit {
     if (!existing) throw nowhere(address);
     if (existing.authorId !== dto.authorId) throw new ForbiddenException('only the author can replace this site');
     const prepared = prepareSite({ address, title: dto.title, html: dto.html, authorId: existing.authorId });
+    if (!hasVisibleContent(prepared)) throw fieldErrors({ html: [NOTHING_TO_SHOW] });
     const updated = await this.model
       .findOneAndUpdate(
         { address },
@@ -95,12 +112,6 @@ export class SitesService implements OnModuleInit {
       .lean();
     if (!updated) throw nowhere(address);
     return this.toDto(updated, await this.authorOf(updated.authorId));
-  }
-
-  private async assertAuthor(authorId: string): Promise<void> {
-    if (!(await this.people.hasRole(authorId, 'author'))) {
-      throw fieldErrors({ authorId: ['authorId must be a person with the author role'] });
-    }
   }
 
   private async authorOf(slug: string): Promise<AuthorRef> {

@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import type { Response } from 'express';
+import { Error as MongooseError } from 'mongoose';
 import { STATUS_CODES } from 'node:http';
 
 /** Every error leaves the API as JSON: { statusCode, error, message, ...extras }. */
@@ -15,6 +16,19 @@ export class JsonErrorFilter implements ExceptionFilter {
       res
         .status(status)
         .json(typeof body === 'string' ? { statusCode: status, error: STATUS_CODES[status], message: body } : body);
+      return;
+    }
+    // A document Mongoose refuses is the caller's fault, never a server error.
+    if (exception instanceof MongooseError.ValidationError) {
+      const fields: Record<string, string[]> = {};
+      for (const [path, detail] of Object.entries(exception.errors)) fields[path] = [detail.message];
+      res.status(400).json({ statusCode: 400, error: 'Bad Request', message: 'Validation failed', fields });
+      return;
+    }
+    if (exception instanceof MongooseError.CastError) {
+      res
+        .status(400)
+        .json({ statusCode: 400, error: 'Bad Request', message: 'Validation failed', fields: { [exception.path]: [`${exception.path} is not valid`] } });
       return;
     }
     const err = exception as { statusCode?: number; status?: number; message?: string };

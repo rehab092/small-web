@@ -132,6 +132,65 @@ describe('API (seeded database)', () => {
     });
   });
 
+  describe('content that is empty after sanitizing (was a 500 on POST, and stored html="" on PUT)', () => {
+    const EMPTY_AFTER_SANITIZING: Array<[name: string, html: string]> = [
+      ['script only', '<script>alert(1)</script>'],
+      ['empty div', '<div></div>'],
+      ['empty paragraph', '<p></p>'],
+      ['style only', '<style>p{color:red}</style>'],
+      ['whitespace only', '   \n\t  '],
+      ['comment only', '<!-- nothing to see -->'],
+      ['disallowed elements only', '<iframe src="https://e.example"></iframe><form><input name=x></form>'],
+      ['image only (images are not allowed)', '<img src=x onerror=alert(1)>'],
+      ['non-breaking spaces only', '<p>&nbsp;&nbsp;</p>'],
+      ['whole empty document', '<html><head><title>T</title></head><body></body></html>'],
+    ];
+    const MESSAGE = 'nothing left to show after removing disallowed content';
+
+    it.each(EMPTY_AFTER_SANITIZING)('POST answers 400 with fields.html, not 500: %s', async (_name, html) => {
+      const res = await http().post('/sites').send({ address: 'emptyish.zz', title: 'Empty', html, authorId: 'wen-zhao' }).expect(400);
+      expect(res.body).toMatchObject({ statusCode: 400, error: 'Bad Request', message: 'Validation failed' });
+      expect(res.body.fields.html).toEqual([MESSAGE]);
+      await http().get('/sites/emptyish.zz').expect(404); // nothing was stored
+    });
+
+    it.each(EMPTY_AFTER_SANITIZING)('PUT answers 400 with fields.html and keeps the old page: %s', async (_name, html) => {
+      await http().post('/sites').send({ address: 'keepme.zz', title: 'Keep', html: '<p>original words</p>', authorId: 'wen-zhao' }).then((r) => {
+        if (r.status !== 201 && r.status !== 409) throw new Error(`setup failed: ${r.status}`);
+      });
+      const res = await http().put('/sites/keepme.zz').send({ title: 'Keep', html, authorId: 'wen-zhao' }).expect(400);
+      expect(res.body.fields.html).toEqual([MESSAGE]);
+      const after = (await http().get('/sites/keepme.zz').expect(200)).body;
+      expect(after.html).toContain('original words');
+      expect(after.revision).toBe(1);
+    });
+
+    it('still accepts a page that keeps some visible text after sanitizing', async () => {
+      const res = await http()
+        .post('/sites')
+        .send({ address: 'partly.zz', title: 'Partly', html: '<script>alert(1)</script><p>but this stays</p>', authorId: 'wen-zhao' })
+        .expect(201);
+      expect(res.body.html).toBe('<p>but this stays</p>');
+    });
+
+    it('reports an empty-after-sanitizing page together with other bad fields', async () => {
+      const res = await http().post('/sites').send({ address: 'emptyish2.zz', title: 'x', html: '<script>1</script>', authorId: 'nobody' }).expect(400);
+      expect(Object.keys(res.body.fields).sort()).toEqual(['authorId', 'html']);
+    });
+
+    it('treats zero-width and blank characters as no content', async () => {
+      const res = await http()
+        .post('/sites')
+        .send({ address: 'zerowidth.zz', title: 'Z', html: '<p>&#8203;&#8203;</p><p>&#160; &#8203;</p>', authorId: 'wen-zhao' })
+        .expect(400);
+      expect(res.body.fields.html).toEqual([MESSAGE]);
+    });
+
+    it('accepts a page whose only content is a symbol or punctuation', async () => {
+      await http().post('/sites').send({ address: 'justasymbol.zz', title: 'Symbol', html: '<p>★</p>', authorId: 'wen-zhao' }).expect(201);
+    });
+  });
+
   describe('PUT /sites/:address (replace)', () => {
     it('replaces in place, bumps the revision and keeps createdAt', async () => {
       await http().post('/sites').send({ address: 'ledger2.zz', title: 'One', html: '<p>first</p>', authorId: 'odile-mercier' }).expect(201);
