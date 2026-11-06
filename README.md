@@ -1,6 +1,6 @@
 # The Small Web
 
-Next.js browser (`web/`) + NestJS API (`api/`) + MongoDB.
+Next.js browser (`web/`) + NestJS API (`api/`) + MongoDB. Node 20 or newer (`nvm use` reads `.nvmrc`).
 
 ## Install
 
@@ -8,19 +8,27 @@ Next.js browser (`web/`) + NestJS API (`api/`) + MongoDB.
 npm install
 ```
 
-## Environment
+## Database
+
+Pick one. All three work with no `.env` file.
+
+```bash
+npm run dev:db          # local development database (port 27018, data in api/.mongo-data); keep it running
+```
+
+```bash
+docker compose up -d    # MongoDB 7 in Docker, published on 27017 and 27018
+```
+
+Or use your own MongoDB: set `MONGO_URI` (see Environment).
+
+## Environment (optional)
+
+Everything has a default, so these files are only needed to change something.
 
 ```bash
 cp api/.env.example api/.env        # MONGO_URI, PORT, CORS_ORIGIN
 cp web/.env.example web/.env.local  # NEXT_PUBLIC_API_URL
-```
-
-## Database
-
-With your own MongoDB, set `MONGO_URI` in `api/.env`. Without one, start the local development database (port 27018, data in `api/.mongo-data`) and leave `MONGO_URI` unset:
-
-```bash
-npm run dev:db
 ```
 
 ## Seed

@@ -32,7 +32,7 @@ export function describeStartupError(err: unknown, uri: string = resolveMongoUri
   return [
     `Could not reach MongoDB at ${redactUri(uri)}.`,
     '  - Start the local development database:   npm run dev:db',
-    '  - or use Docker:                          docker compose up -d   (and set MONGO_URI=mongodb://127.0.0.1:27017/small-web)',
+    '  - or use Docker:                          docker compose up -d',
     '  - or point MONGO_URI at your own MongoDB (api/.env).',
   ].join('\n');
 }

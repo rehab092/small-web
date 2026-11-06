@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Small Web API (NestJS + MongoDB)",
+  "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",

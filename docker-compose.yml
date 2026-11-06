@@ -1,0 +1,20 @@
+# MongoDB for the Small Web, as an alternative to `npm run dev:db`.
+#   docker compose up -d
+# Published on 27017 (the standard port) and on 27018, which is where the API and the
+# seed look when MONGO_URI is not set, so no .env is needed either way.
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  mongo-data:
