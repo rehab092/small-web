@@ -48,7 +48,38 @@ npm run dev:web     # http://localhost:3000
 npm test                    # api (jest) and web (vitest)
 npm run test -w api
 npm run test -w web
-npm run test:e2e -w web     # browser tests (Playwright, uses the installed Edge)
+```
+
+## End-to-end tests
+
+Needs the development database running (own terminal):
+
+```bash
+npm run dev:db
+```
+
+One-time browser install (Playwright's chromium):
+
+```bash
+cd web && npx playwright install chromium
+```
+
+Run (self-contained: API on :4100, web on :3100, its own `small-web-e2e` database, re-seeded each run; never touches :3000, :4000 or the development data):
+
+```bash
+npm run test:e2e -w web
+```
+
+To use an installed browser instead of downloading chromium:
+
+```bash
+E2E_BROWSER_CHANNEL=msedge npm run test:e2e -w web
+```
+
+PowerShell:
+
+```powershell
+$env:E2E_BROWSER_CHANNEL='msedge'; npm run test:e2e -w web
 ```
 
 ## Build and run for production
