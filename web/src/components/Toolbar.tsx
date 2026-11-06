@@ -22,6 +22,8 @@ interface Props {
   addr: string;
   /** Changes whenever the shown page changes (resets the address bar text). */
   seq: number;
+  /** The site address being loaded, if a navigation is pending. */
+  pendingAddr: string | null;
   loading: boolean;
   canBack: boolean;
   canForward: boolean;
@@ -34,13 +36,13 @@ interface Props {
 }
 
 export function Toolbar(props: Props) {
-  const { people, person, addr, seq, loading } = props;
+  const { people, person, addr, seq, pendingAddr, loading } = props;
   const [text, setText] = useState(displayAddress(addr));
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setText(displayAddress(addr));
-  }, [addr, seq]);
+    setText(displayAddress(pendingAddr ?? addr));
+  }, [addr, seq, pendingAddr]);
 
   const page = internalPage(addr);
   const active = (name: string) => (page === name ? 'tool tool--active' : 'tool');

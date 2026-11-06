@@ -162,7 +162,8 @@ export function BrowserApp() {
         person={b.person}
         addr={entry.addr}
         seq={snapshot.seq}
-        loading={page.kind === 'loading'}
+        pendingAddr={b.pendingAddr}
+        loading={page.kind === 'loading' || b.pendingAddr !== null}
         canBack={b.canBack}
         canForward={b.canForward}
         onBack={b.back}

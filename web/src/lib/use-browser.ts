@@ -13,8 +13,10 @@
  *    React strict-mode replays and retries cannot write double history;
  *  - pages already seen in this tab are served from a per-entry cache, so
  *    going back shows exactly the page that was left (and quickly);
- *  - a newer navigation aborts the load in flight, so rapid clicking ends on
- *    the last page and records only the pages that were really shown.
+ *  - a navigation to a site is held as *pending* (see navigator.ts) and only
+ *    becomes a history entry once its page has arrived; a newer navigation, Back,
+ *    Forward or a person switch cancels it, so aborted navigations leave no entry
+ *    and no visit, and rapid clicking ends on the last page shown.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -32,8 +34,24 @@ import {
   parseLocation,
   type Snapshot,
 } from './session';
+import { Navigator, type PageResult } from './navigator';
 import { canBack, canForward } from './history-stack';
 import type { PersonDto, SiteDto, Via } from './types';
+
+/** What the tab has already learned about a site entry's page. */
+type CachedPage = SiteDto | 'nowhere' | { error: string };
+
+function pageFromCache(cached: CachedPage, addr: string): PageState {
+  if (cached === 'nowhere') return { kind: 'nowhere', addr };
+  if ('error' in cached) return { kind: 'error', addr, message: cached.error };
+  return { kind: 'site', site: cached };
+}
+
+function cacheFromResult(result: PageResult): CachedPage {
+  if (result.kind === 'site') return result.site;
+  if (result.kind === 'nowhere') return 'nowhere';
+  return { error: result.message };
+}
 
 export type PageState =
   | { kind: 'internal'; addr: string }
@@ -76,11 +94,13 @@ export function useBrowser() {
   const [people, setPeople] = useState<PersonDto[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
   const [session, setSession] = useState<BrowserSession | null>(null);
+  const [navigator, setNavigator] = useState<Navigator | null>(null);
+  const [pendingAddr, setPendingAddr] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [shown, setShown] = useState<{ seq: number; page: PageState } | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  const siteCache = useRef(new Map<string, SiteDto | 'nowhere'>());
+  const siteCache = useRef(new Map<string, CachedPage>());
   const viewCache = useRef<ViewCache>(new Map());
   const requestIds = useRef(new Map<number, string>());
   const noticeSeq = useRef(0);
@@ -105,8 +125,22 @@ export function useBrowser() {
           store: new WebStackStore(window.sessionStorage),
           newId: () => crypto.randomUUID(),
         });
-        next.subscribe(setSnapshot);
+        const nav = new Navigator({
+          session: next,
+          loadSite: (addr, signal) => api.site(addr, signal),
+          onPending: setPendingAddr,
+          // a site that arrived is shown from here, without a second request
+          onCommit: (snap, result) => {
+            if (result) siteCache.current.set(snap.entry.id, cacheFromResult(result));
+          },
+        });
+        next.subscribe((snap) => {
+          // every snapshot except a navigation we just committed abandons a pending load
+          if (snap.cause !== 'navigate') nav.cancel();
+          setSnapshot(snap);
+        });
         next.start(loc, pickDefaultPerson(list, loc.person));
+        setNavigator(nav);
         setSession(next);
       })
       .catch((err: unknown) => {
@@ -154,8 +188,8 @@ export function useBrowser() {
     if (cause === 'reload') siteCache.current.delete(entry.id);
     const cached = siteCache.current.get(entry.id);
     if (cached) {
-      show(cached === 'nowhere' ? { kind: 'nowhere', addr: entry.addr } : { kind: 'site', site: cached });
-      record(entry.addr);
+      show(pageFromCache(cached, entry.addr));
+      if (typeof cached === 'string' || !('error' in cached)) record(entry.addr);
       return;
     }
 
@@ -189,9 +223,7 @@ export function useBrowser() {
     const { entry, cause } = snapshot;
     if (isInternalAddr(entry.addr)) return { kind: 'internal', addr: entry.addr };
     const cached = siteCache.current.get(entry.id);
-    if (cached && cause !== 'reload') {
-      return cached === 'nowhere' ? { kind: 'nowhere', addr: entry.addr } : { kind: 'site', site: cached };
-    }
+    if (cached && cause !== 'reload') return pageFromCache(cached, entry.addr);
     return { kind: 'loading', addr: entry.addr };
   }, [shown, snapshot]);
 
@@ -204,9 +236,9 @@ export function useBrowser() {
 
   const go = useCallback(
     (addr: string, via: Via) => {
-      session?.navigate(addr, via);
+      navigator?.go(addr, via);
     },
-    [session],
+    [navigator],
   );
 
   /** Address-bar input: an address, a search, or something outside the Small Web. */
@@ -215,21 +247,22 @@ export function useBrowser() {
       const resolved = resolveTyped(input);
       if (!resolved) return false;
       if (resolved.kind === 'address') {
-        session?.navigate(resolved.addr, 'typed');
+        navigator?.go(resolved.addr, 'typed');
         return true;
       }
       if (resolved.kind === 'search') {
-        session?.navigate(searchAddr(resolved.query), 'typed');
+        navigator?.go(searchAddr(resolved.query), 'typed');
         return true;
       }
       say(`${resolved.href} is outside the Small Web. It is shown, never followed.`, 'warn');
       return false;
     },
-    [session, say],
+    [navigator, say],
   );
 
   const switchPerson = useCallback(
     (id: string) => {
+      navigator?.cancel();
       session?.switchPerson(id);
       try {
         localStorage.setItem(PERSON_KEY, id);
@@ -237,7 +270,7 @@ export function useBrowser() {
         /* storage unavailable */
       }
     },
-    [session],
+    [session, navigator],
   );
 
   const stack = snapshot?.stack;
@@ -254,11 +287,19 @@ export function useBrowser() {
       say,
       canBack: stack ? canBack(stack) : false,
       canForward: stack ? canForward(stack) : false,
-      back: () => session?.back(),
-      forward: () => session?.forward(),
+      pendingAddr,
+      // cancel a pending load at click time, so it cannot push while the traversal is in flight
+      back: () => {
+        navigator?.cancel();
+        session?.back();
+      },
+      forward: () => {
+        navigator?.cancel();
+        session?.forward();
+      },
       reload: () => {
         const here = snapshot?.entry.addr;
-        if (here) session?.navigate(here, 'typed');
+        if (here) navigator?.go(here, 'typed');
       },
       go,
       open,
@@ -269,6 +310,6 @@ export function useBrowser() {
       viewCache: viewCache.current,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [session, snapshot, page, notice, people, person, bootError, go, open, switchPerson, say, stack],
+    [session, navigator, pendingAddr, snapshot, page, notice, people, person, bootError, go, open, switchPerson, say, stack],
   );
 }
