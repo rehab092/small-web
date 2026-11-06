@@ -20,7 +20,7 @@
  * are injected so it is tested against a fake browser history.
  */
 
-import { HOME_ADDR, isInternalAddr, normalizeAddress } from './address';
+import { HOME_ADDR, internalPage, isInternalAddr, normalizeAddress } from './address';
 import {
   EMPTY_STACK,
   current,
@@ -122,7 +122,7 @@ function asNavState(value: unknown): NavState | null {
 /** Only internal pages and valid small-web addresses may become stack entries. */
 function sanitizeAddr(addr: string | null): string {
   if (!addr) return HOME_ADDR;
-  if (isInternalAddr(addr)) return addr;
+  if (isInternalAddr(addr)) return internalPage(addr) ? addr : HOME_ADDR;
   return normalizeAddress(addr) ?? HOME_ADDR;
 }
 

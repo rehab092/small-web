@@ -64,6 +64,28 @@ export function searchAddr(query: string): string {
   return `about:search?q=${encodeURIComponent(query)}`;
 }
 
+/** The publish form, optionally prefilled with an address (e.g. from a Nowhere page). */
+export function publishAddr(address?: string): string {
+  return address ? `${PUBLISH_ADDR}?address=${encodeURIComponent(address)}` : PUBLISH_ADDR;
+}
+
+export function parsePublishAddr(addr: string): string | null {
+  if (!addr.startsWith(PUBLISH_ADDR)) return null;
+  const q = addr.slice(PUBLISH_ADDR.length + 1);
+  return new URLSearchParams(q).get('address');
+}
+
+export type InternalPage = 'home' | 'history' | 'search' | 'publish';
+
+/** Which built-in page an `about:` address is; null for unknown ones. */
+export function internalPage(addr: string): InternalPage | null {
+  if (addr === HOME_ADDR) return 'home';
+  if (addr === HISTORY_ADDR) return 'history';
+  if (addr.startsWith('about:search')) return 'search';
+  if (addr.startsWith(PUBLISH_ADDR)) return 'publish';
+  return null;
+}
+
 export function isInternalAddr(addr: string): boolean {
   return addr.startsWith('about:');
 }
