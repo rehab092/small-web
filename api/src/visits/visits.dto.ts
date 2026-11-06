@@ -1,9 +1,11 @@
 import { IsIn, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsSmallWebAddress } from '../common/is-small-web-address';
 import { VIA_VALUES, Via } from './visit.schema';
 
 export class RecordVisitDto {
   @IsString()
   @MaxLength(300)
+  @IsSmallWebAddress()
   address!: string;
 
   @IsIn(VIA_VALUES as unknown as string[], { message: `via must be one of: ${VIA_VALUES.join(', ')}` })

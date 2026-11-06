@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsString, Length, MaxLength } from 'class-validator';
+import { IsSmallWebAddress } from '../common/is-small-web-address';
 import { MAX_HTML_LENGTH } from '../common/sanitizer';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -7,6 +8,7 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
 export class PublishSiteDto {
   @IsString()
   @MaxLength(200)
+  @IsSmallWebAddress()
   address!: string;
 
   @Transform(trim)
