@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
 import { fieldErrors } from '../common/errors';
-import { PublishSiteDto, ReplaceSiteDto } from './sites.dto';
+import { PreviewSiteDto, PublishSiteDto, ReplaceSiteDto } from './sites.dto';
 import { SitesService } from './sites.service';
 
 /** Parse an optional integer query param within [min, max]; anything else is a field error. */
@@ -23,6 +23,13 @@ export class SitesController {
   @Get(':address')
   get(@Param('address') address: string) {
     return this.sites.get(address);
+  }
+
+  /** Dry run of publish: what the sanitizer would store for this HTML. Writes nothing. */
+  @Post('preview')
+  @HttpCode(200)
+  preview(@Body() dto: PreviewSiteDto) {
+    return this.sites.preview(dto.html);
   }
 
   @Post()

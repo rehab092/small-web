@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { EMPTY_AFTER_SANITIZING, NOTHING_TO_SHOW_MESSAGE } from './fixtures';
 import { startApp, TestApp } from './helpers';
 
 describe('API (seeded database)', () => {
@@ -133,19 +134,7 @@ describe('API (seeded database)', () => {
   });
 
   describe('content that is empty after sanitizing (was a 500 on POST, and stored html="" on PUT)', () => {
-    const EMPTY_AFTER_SANITIZING: Array<[name: string, html: string]> = [
-      ['script only', '<script>alert(1)</script>'],
-      ['empty div', '<div></div>'],
-      ['empty paragraph', '<p></p>'],
-      ['style only', '<style>p{color:red}</style>'],
-      ['whitespace only', '   \n\t  '],
-      ['comment only', '<!-- nothing to see -->'],
-      ['disallowed elements only', '<iframe src="https://e.example"></iframe><form><input name=x></form>'],
-      ['image only (images are not allowed)', '<img src=x onerror=alert(1)>'],
-      ['non-breaking spaces only', '<p>&nbsp;&nbsp;</p>'],
-      ['whole empty document', '<html><head><title>T</title></head><body></body></html>'],
-    ];
-    const MESSAGE = 'nothing left to show after removing disallowed content';
+    const MESSAGE = NOTHING_TO_SHOW_MESSAGE;
 
     it.each(EMPTY_AFTER_SANITIZING)('POST answers 400 with fields.html, not 500: %s', async (_name, html) => {
       const res = await http().post('/sites').send({ address: 'emptyish.zz', title: 'Empty', html, authorId: 'wen-zhao' }).expect(400);

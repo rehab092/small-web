@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ADDRESS_HINT, normalizeAddress, toAddress } from '../common/address';
 import { fieldErrors, nowhere } from '../common/errors';
-import { extractText, sanitizeSiteHtml } from '../common/sanitizer';
+import { hasVisibleContent, inspectPage, NOTHING_TO_SHOW, PageContent } from '../common/page-content';
 import { PeopleService } from '../people/people.service';
 import { AuthorRef, PublishSiteDto, ReplaceSiteDto, SiteDto, SiteSummaryDto } from './sites.dto';
 import { Site } from './site.schema';
@@ -24,23 +24,14 @@ export interface PreparedSite {
   authorId: string;
 }
 
-/** Sanitize the HTML and derive the search text. The only way a Site body is ever built. */
-export function prepareSite(input: SiteInput): PreparedSite {
-  const html = sanitizeSiteHtml(input.html);
-  return { address: input.address, title: input.title, html, text: extractText(html), authorId: input.authorId };
-}
-
-export const NOTHING_TO_SHOW = 'nothing left to show after removing disallowed content';
-
-/** A letter, digit, punctuation or symbol: zero-width and blank characters do not count as content. */
-const VISIBLE_CHARACTER = /[\p{L}\p{N}\p{P}\p{S}]/u;
-
 /**
- * True when something readable survives sanitizing. Checked in the service, before
- * Mongoose ever sees the document, so an empty page is a 400 and never a 500.
+ * Sanitize the HTML and derive the search text, through inspectPage(): the one definition shared with
+ * POST /sites/preview. The only way a Site body is ever built. (The seed spreads this straight into the
+ * document, so it carries no extra fields; judge emptiness with hasVisibleContent before storing.)
  */
-export function hasVisibleContent(page: Pick<PreparedSite, 'html' | 'text'>): boolean {
-  return page.html.trim() !== '' && VISIBLE_CHARACTER.test(page.text);
+export function prepareSite(input: SiteInput): PreparedSite {
+  const { html, text } = inspectPage(input.html);
+  return { address: input.address, title: input.title, html, text, authorId: input.authorId };
 }
 
 @Injectable()
@@ -75,6 +66,14 @@ export class SitesService implements OnModuleInit {
       createdAt: r.createdAt.toISOString(),
     }));
     return { total, items };
+  }
+
+  /**
+   * Dry run of publishing: exactly what would be stored for this HTML, with no database access.
+   * Same inspectPage() as publish and replace, so the preview cannot disagree with the result.
+   */
+  preview(html: string): PageContent {
+    return inspectPage(html);
   }
 
   async publish(dto: PublishSiteDto): Promise<SiteDto> {

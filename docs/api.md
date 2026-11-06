@@ -117,6 +117,22 @@ Limits: `title` 1-120 chars; `html` 1-100 000 chars; `authorId` must be a person
 `201 SiteDto` (html is the sanitized result — show this in the preview-after-publish).
 `400` validation · `409` address taken (`message: "address already published"`).
 
+### `POST /sites/preview` — dry run of publish
+Body: `{ "html": string }`. Anything else sent (`address`, `title`, `authorId`) is ignored; no author is needed. **Never stores anything.**
+`200` (not 201):
+```ts
+{
+  html: string;          // exactly the html POST /sites would store
+  text: string;          // the plain text that would be indexed for search
+  empty: boolean;        // true <=> POST /sites with this html would answer 400 with fields.html
+  message: string | null; // when empty: "nothing left to show after removing disallowed content" (the same wording publish returns in fields.html); otherwise null
+}
+```
+It runs the very same function as publish and replace (`inspectPage`), so the preview cannot differ from the published page: render `html` in the sandboxed frame and it is what readers will see. **Do not re-implement the sanitizer or the "empty" rule on the client**; ask this endpoint (debounce the calls).
+
+- Empty, whitespace-only, script-only or style-only html is a normal answer: `200 { empty: true }`, never an error.
+- `html` over 100 000 characters → `400` with `fields.html`, exactly like publish. A missing or non-string `html` → `400` with `fields.html`. A body over 1 MB → `413`.
+
 ### `PUT /sites/:address` — replace
 **Edit = replace in place.** Same body minus `address`: `{ title, html, authorId }`; `authorId` must match the site's author (no accounts, so this is a courtesy check, not security). Bumps `revision`, sets `updatedAt`, keeps `createdAt`. `200 SiteDto` · `404` · `400` · `403` (`authorId` is not the site's author).
 Visits reference the *address*, not a revision, so history stays valid across edits.

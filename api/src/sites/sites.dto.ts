@@ -25,6 +25,13 @@ export class PublishSiteDto {
   authorId!: string;
 }
 
+/** Same size limit as publish, but empty input is allowed: it simply previews as { empty: true }. */
+export class PreviewSiteDto {
+  @IsString()
+  @MaxLength(MAX_HTML_LENGTH, { message: `html must be at most ${MAX_HTML_LENGTH} characters` })
+  html!: string;
+}
+
 export class ReplaceSiteDto {
   @Transform(trim)
   @IsString()
