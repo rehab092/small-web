@@ -76,9 +76,17 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
   const set = (patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }));
     setPublished(null);
-    setConflict(false);
-    setMessage(null);
-    setFields({});
+    // A conflict is about the address: keep offering "Replace" while the rest of
+    // the page is being edited, and clear it only when the address changes.
+    if ('address' in patch) {
+      setConflict(false);
+      setMessage(null);
+    }
+    setFields((current) => {
+      const next = { ...current };
+      for (const name of Object.keys(patch)) delete next[name];
+      return next;
+    });
   };
 
   const clientErrors: Record<string, string> = {};
