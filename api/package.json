@@ -8,6 +8,7 @@
     "start": "node dist/main.js",
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "seed": "ts-node --transpile-only src/seed/run.ts",
+    "dev:db": "ts-node --transpile-only src/db/dev-db.ts",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
@@ -22,7 +23,7 @@
     "mongoose": "^8.9.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "sanitize-html": "^2.13.1"
+    "sanitize-html": "2.13.1"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
