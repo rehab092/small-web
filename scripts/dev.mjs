@@ -1,4 +1,4 @@
-// Runs the API and the web app together: `npm run dev`.
+// Runs the API and the web app together: `npm run dev`, or `npm start` (--prod, after `npm run build`).
 // No dependencies on purpose; stops both when either exits or on Ctrl+C.
 // Prints a "ready" line for each app once it really answers (the API's /health pings MongoDB).
 import { spawn, spawnSync } from 'node:child_process';
@@ -9,9 +9,10 @@ const WEB_PORT = 3000; // fixed by web's "dev" script
 const READY_TIMEOUT_MS = 120_000;
 const DB_HINT_AFTER_MS = 20_000;
 
+const production = process.argv.includes('--prod');
 const apps = [
-  { name: 'api', script: 'dev:api', url: `http://localhost:${API_PORT}/health` },
-  { name: 'web', script: 'dev:web', url: `http://localhost:${WEB_PORT}` },
+  { name: 'api', script: production ? 'start:api' : 'dev:api', url: `http://localhost:${API_PORT}/health` },
+  { name: 'web', script: production ? 'start:web' : 'dev:web', url: `http://localhost:${WEB_PORT}` },
 ];
 const children = [];
 let stopping = false;

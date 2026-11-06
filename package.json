@@ -18,6 +18,9 @@
     "seed": "npm run seed -w api",
     "build": "npm run build -w api && npm run build -w web",
     "test": "npm run test:scripts && npm test -w api && npm test -w web --if-present",
-    "test:scripts": "node --test scripts/wait-ready.test.mjs"
+    "test:scripts": "node --test scripts/wait-ready.test.mjs",
+    "start": "node scripts/dev.mjs --prod",
+    "start:api": "npm run start -w api",
+    "start:web": "npm run start -w web"
   }
 }

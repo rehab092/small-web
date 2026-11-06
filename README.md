@@ -50,6 +50,22 @@ npm run dev:api     # http://localhost:4000
 npm run dev:web     # http://localhost:3000
 ```
 
+### Production run
+
+Use this for a demo or recording: `npm run dev` runs `next dev`, which is slower and shows a floating Next.js dev-tools badge. The production build has neither.
+
+```bash
+npm run build       # builds api and web
+npm start           # api (http://localhost:4000) and web (http://localhost:3000) together
+```
+
+Or separately:
+
+```bash
+npm run start:api   # http://localhost:4000
+npm run start:web   # http://localhost:3000
+```
+
 ## Test
 
 ```bash
@@ -88,14 +104,6 @@ PowerShell:
 
 ```powershell
 $env:E2E_BROWSER_CHANNEL='msedge'; npm run test:e2e -w web
-```
-
-## Build and run for production
-
-```bash
-npm run build
-npm run start -w api        # http://localhost:4000
-npm run start -w web        # http://localhost:3000
 ```
 
 ## Type check
