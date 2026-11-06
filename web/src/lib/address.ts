@@ -10,14 +10,16 @@ const MAX_ADDRESS_LENGTH = 100;
 /**
  * Normalize user input to a canonical small-web address, or `null` when the
  * input is not a small-web address (empty, whitespace inside, wrong TLD,
- * unsupported scheme, ...).
+ * unsupported scheme, ...). Anything after the host (`/path`, `?query`, `#fragment`)
+ * is dropped, so a pasted `tidepool.zz/reading` goes to `tidepool.zz`.
  */
 export function normalizeAddress(input: string): string | null {
   let s = input.trim();
   if (/\s/.test(s)) return null;
   s = s.toLowerCase();
   s = s.replace(/^(https?|web):\/\//, '');
-  s = s.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  // a path, query or fragment never changes which site it is: the host routes
+  s = s.replace(/[?#].*$/, '').replace(/\/.*$/, '');
   if (s !== '' && !s.includes('.')) s += '.zz';
   if (s.length > MAX_ADDRESS_LENGTH || !VALID_ADDRESS.test(s)) return null;
   return s;

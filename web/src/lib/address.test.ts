@@ -29,7 +29,14 @@ describe('normalizeAddress (vectors from docs/api.md)', () => {
     ['', null],
     ['   ', null],
     ['javascript:alert(1)', null],
-    ['tidepool.zz/about', null],
+    ['tidepool.zz/reading', 'tidepool.zz'],
+    ['https://Tidepool.zz/a/b?x=1#y', 'tidepool.zz'],
+    ['tidepool/reading', 'tidepool.zz'],
+    ['web://tidepool.zz/', 'tidepool.zz'],
+    ['/tidepool.zz', null],
+    ['//tidepool.zz', null],
+    ['example.com/tidepool.zz', null],
+    ['javascript:alert(1)//x.zz', null],
     [`${'a'.repeat(64)}.zz`, null],
     [`${'a.'.repeat(60)}zz`, null],
   ];
@@ -43,6 +50,12 @@ describe('classifyHref', () => {
     expect(classifyHref('tidepool.zz')).toEqual({ kind: 'site', address: 'tidepool.zz' });
     expect(classifyHref('http://Ironbread.zz/')).toEqual({ kind: 'site', address: 'ironbread.zz' });
   });
+  it('routes a .zz address with a path to its host, never calls it external', () => {
+    expect(classifyHref('tidepool.zz/reading')).toEqual({ kind: 'site', address: 'tidepool.zz' });
+    expect(classifyHref('http://tidepool.zz/a/b#c')).toEqual({ kind: 'site', address: 'tidepool.zz' });
+    expect(classifyHref('example.com/tidepool.zz').kind).toBe('external');
+  });
+
   it('treats links to addresses that never existed like any other address', () => {
     expect(classifyHref('ghostship.zz')).toEqual({ kind: 'site', address: 'ghostship.zz' });
   });
@@ -63,6 +76,10 @@ describe('resolveTyped', () => {
     expect(resolveTyped(' Tidepool ')).toEqual({ kind: 'address', addr: 'tidepool.zz' });
     expect(resolveTyped('about:history')).toEqual({ kind: 'address', addr: 'about:history' });
   });
+  it('a pasted address with a path goes to the host', () => {
+    expect(resolveTyped('tidepool.zz/reading')).toEqual({ kind: 'address', addr: 'tidepool.zz' });
+  });
+
   it('reports real-web urls as external and never as a search', () => {
     expect(resolveTyped('https://example.com')).toEqual({
       kind: 'external',
