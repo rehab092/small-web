@@ -152,7 +152,7 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
                 setFilter('');
               }
             }}
-            placeholder="Filter by title, address or how you got there"
+            placeholder="Filter by title or address"
             aria-label="Filter history"
             autoComplete="off"
             spellCheck={false}

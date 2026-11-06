@@ -132,15 +132,16 @@ export interface AddressParts {
 }
 
 /**
- * Split what is in the address bar into its parts, for drawing the scheme, name
- * and `.zz` in different styles. Only exact small-web addresses and built-in
+ * Split what is in the address bar into its parts, for drawing the name and `.zz`
+ * (and the `about:` prefix of built-in pages) in different styles. A small-web address
+ * has no scheme: the address is the only thing typed, so none is invented. Only exact small-web addresses and built-in
  * pages qualify; free text (a search) returns null and is shown as typed.
  */
 export function addressParts(text: string): AddressParts | null {
   const trimmed = text.trim();
   const normalized = normalizeAddress(trimmed);
   if (normalized && normalized === trimmed && normalized.endsWith('.zz')) {
-    return { scheme: 'web://', host: normalized.slice(0, -'.zz'.length), tld: '.zz' };
+    return { scheme: '', host: normalized.slice(0, -'.zz'.length), tld: '.zz' };
   }
   if (/^about:[a-z]+$/.test(trimmed)) {
     return { scheme: 'about:', host: trimmed.slice('about:'.length), tld: '' };

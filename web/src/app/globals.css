@@ -997,7 +997,6 @@ kbd {
   background: var(--start-tint);
   color: inherit;
   border-radius: 3px;
-  box-shadow: 0 0 0 1px #f0cfa4;
 }
 .result__title {
   overflow-wrap: anywhere;
@@ -1167,8 +1166,9 @@ kbd {
   }
 }
 @media (max-width: 400px) {
-  .visit .badge:not(.badge--alert) {
-    display: none;
+  .visit .badge {
+    padding: 1px 6px;
+    font-size: 10px;
   }
 }
 

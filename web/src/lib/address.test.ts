@@ -101,9 +101,9 @@ describe('internal pages', () => {
 });
 
 describe('addressParts', () => {
-  it('splits a site address into scheme, name and .zz', () => {
-    expect(addressParts('tidepool.zz')).toEqual({ scheme: 'web://', host: 'tidepool', tld: '.zz' });
-    expect(addressParts('a.b-c.zz')).toEqual({ scheme: 'web://', host: 'a.b-c', tld: '.zz' });
+  it('splits a site address into its name and .zz, with no invented scheme', () => {
+    expect(addressParts('tidepool.zz')).toEqual({ scheme: '', host: 'tidepool', tld: '.zz' });
+    expect(addressParts('a.b-c.zz')).toEqual({ scheme: '', host: 'a.b-c', tld: '.zz' });
   });
 
   it('draws built-in pages with their own scheme', () => {

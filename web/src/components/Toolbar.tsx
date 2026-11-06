@@ -149,7 +149,7 @@ export function Toolbar(props: Props) {
             />
             {parts && (
               <span className="address__styled" aria-hidden="true">
-                <span className="address__scheme">{parts.scheme}</span>
+                {parts.scheme && <span className="address__scheme">{parts.scheme}</span>}
                 <span className="address__host">{parts.host}</span>
                 <span className="address__tld">{parts.tld}</span>
               </span>
