@@ -91,7 +91,9 @@ interface VisitDto {
 ## Routes
 
 ### `GET /health`
-`200 { "ok": true }`
+Readiness check: pings the database. `200 { "ok": true, "db": "up" }`, or `503 { "statusCode": 503, "error": "Service Unavailable", "message": "database unavailable", "ok": false, "db": "down" }` when MongoDB does not answer within 2 s. Wait on this (not on the port) before starting anything that needs the API.
+
+If the database goes away while the API is running, any route answers `503 { "message": "database unavailable" }`, never a 500.
 
 ### `GET /people`
 Optional `?role=author|browser`. `200 PersonDto[]`, sorted by name.

@@ -413,8 +413,8 @@ describe('API (seeded database)', () => {
   });
 
   describe('platform', () => {
-    it('serves /health', async () => {
-      expect((await http().get('/health').expect(200)).body).toEqual({ ok: true });
+    it('serves /health as a readiness check that pings the database', async () => {
+      expect((await http().get('/health').expect(200)).body).toEqual({ ok: true, db: 'up' });
     });
     it('sends CORS headers for the configured origin', async () => {
       const res = await http().get('/health').set('Origin', 'http://localhost:3000').expect(200);

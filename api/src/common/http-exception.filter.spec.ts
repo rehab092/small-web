@@ -37,6 +37,15 @@ describe('JsonErrorFilter', () => {
     expect(body.fields).toHaveProperty('cursor');
   });
 
+  it.each(['MongoServerSelectionError', 'MongooseServerSelectionError', 'MongoNetworkError', 'MongoNotConnectedError'])(
+    'answers 503, not 500, when the database goes away (%s)',
+    (name) => {
+      const { status, body } = run(Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:27018'), { name }));
+      expect(status).toBe(503);
+      expect(body).toEqual({ statusCode: 503, error: 'Service Unavailable', message: 'database unavailable' });
+    },
+  );
+
   it('still hides unexpected errors behind a generic 500', () => {
     const { status, body } = run(new Error('db password leaked in message'));
     expect(status).toBe(500);

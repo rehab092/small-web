@@ -31,6 +31,11 @@ export class JsonErrorFilter implements ExceptionFilter {
         .json({ statusCode: 400, error: 'Bad Request', message: 'Validation failed', fields: { [exception.path]: [`${exception.path} is not valid`] } });
       return;
     }
+    // The database went away while serving: say so (503), do not pretend the server is broken (500).
+    if (/^(Mongo|Mongoose)(ServerSelection|Network|NotConnected)/.test((exception as Error)?.name ?? '')) {
+      res.status(503).json({ statusCode: 503, error: 'Service Unavailable', message: 'database unavailable' });
+      return;
+    }
     const err = exception as { statusCode?: number; status?: number; message?: string };
     const status = err?.statusCode ?? err?.status;
     if (typeof status === 'number' && status >= 400 && status < 500) {

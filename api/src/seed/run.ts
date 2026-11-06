@@ -5,9 +5,11 @@ import { NestFactory } from '@nestjs/core';
 import { getConnectionToken } from '@nestjs/mongoose';
 import type { Connection } from 'mongoose';
 import { AppModule } from '../app.module';
+import { assertDatabaseReachable, exitWithStartupError } from '../db/database';
 import { SeedService } from './seed.service';
 
 async function main() {
+  await assertDatabaseReachable();
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   try {
     const counts = await app.get(SeedService).run();
@@ -24,7 +26,4 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch(exitWithStartupError);

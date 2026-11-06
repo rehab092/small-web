@@ -10,7 +10,10 @@ import { VisitsModule } from './visits/visits.module';
 
 @Module({
   imports: [
-    MongooseModule.forRootAsync({ useFactory: () => ({ uri: resolveMongoUri() }) }),
+    // Fail within ~8 s when MongoDB is not there, so start-up can print a clear message instead of hanging.
+    MongooseModule.forRootAsync({
+      useFactory: () => ({ uri: resolveMongoUri(), serverSelectionTimeoutMS: 4000, retryAttempts: 1, retryDelay: 500 }),
+    }),
     PeopleModule,
     SitesModule,
     SearchModule,
