@@ -166,7 +166,20 @@ window.addEventListener('scroll',function(){
   if(queued)return;queued=true;
   requestAnimationFrame(function(){queued=false;send({type:'scroll',y:window.pageYOffset||0});});
 },{passive:true});
-function restore(){if(C.y>0)window.scrollTo(0,C.y);}
+var userMoved=false,restoring=false;
+['wheel','touchstart','keydown','mousedown'].forEach(function(t){
+  window.addEventListener(t,function(){userMoved=true;},{passive:true,capture:true});
+});
+function restore(){
+  if(C.y<=0||restoring)return;
+  restoring=true;
+  var tries=0;
+  (function step(){
+    if(userMoved)return;
+    window.scrollTo(0,C.y);
+    if(Math.abs((window.pageYOffset||0)-C.y)>1&&tries++<40)requestAnimationFrame(step);
+  })();
+}
 document.addEventListener('DOMContentLoaded',restore);
 window.addEventListener('load',function(){restore();send({type:'ready'});});
 })();`;

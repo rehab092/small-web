@@ -77,7 +77,7 @@ export function useBrowser() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [session, setSession] = useState<BrowserSession | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [page, setPage] = useState<PageState>({ kind: 'internal', addr: HOME_ADDR });
+  const [shown, setShown] = useState<{ seq: number; page: PageState } | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const siteCache = useRef(new Map<string, SiteDto | 'nowhere'>());
@@ -132,6 +132,7 @@ export function useBrowser() {
   useEffect(() => {
     if (!snapshot) return;
     const { entry, arrival, cause, person: who } = snapshot;
+    const show = (next: PageState) => setShown({ seq: snapshot.seq, page: next });
 
     const record = (address: string) => {
       if (!arrival) return;
@@ -146,30 +147,30 @@ export function useBrowser() {
     };
 
     if (isInternalAddr(entry.addr)) {
-      setPage({ kind: 'internal', addr: entry.addr });
+      show({ kind: 'internal', addr: entry.addr });
       return;
     }
 
     if (cause === 'reload') siteCache.current.delete(entry.id);
     const cached = siteCache.current.get(entry.id);
     if (cached) {
-      setPage(cached === 'nowhere' ? { kind: 'nowhere', addr: entry.addr } : { kind: 'site', site: cached });
+      show(cached === 'nowhere' ? { kind: 'nowhere', addr: entry.addr } : { kind: 'site', site: cached });
       record(entry.addr);
       return;
     }
 
     const ctrl = new AbortController();
-    setPage({ kind: 'loading', addr: entry.addr });
+    show({ kind: 'loading', addr: entry.addr });
     api
       .site(entry.addr, ctrl.signal)
       .then((site) => {
         siteCache.current.set(entry.id, site ?? 'nowhere');
-        setPage(site ? { kind: 'site', site } : { kind: 'nowhere', addr: entry.addr });
+        show(site ? { kind: 'site', site } : { kind: 'nowhere', addr: entry.addr });
         record(entry.addr);
       })
       .catch((err: unknown) => {
         if ((err as Error).name === 'AbortError') return;
-        setPage({
+        show({
           kind: 'error',
           addr: entry.addr,
           message: err instanceof ApiError ? err.message : 'Something went wrong loading this page.',
@@ -179,6 +180,20 @@ export function useBrowser() {
     // `seq` identifies the snapshot; the snapshot object itself changes on scroll saves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seq]);
+
+  // The page for the snapshot being shown. Derived synchronously, so a page never
+  // renders under another entry's id (a stale frame could overwrite its scroll).
+  const page = useMemo<PageState>(() => {
+    if (!snapshot) return { kind: 'internal', addr: HOME_ADDR };
+    if (shown && shown.seq === snapshot.seq) return shown.page;
+    const { entry, cause } = snapshot;
+    if (isInternalAddr(entry.addr)) return { kind: 'internal', addr: entry.addr };
+    const cached = siteCache.current.get(entry.id);
+    if (cached && cause !== 'reload') {
+      return cached === 'nowhere' ? { kind: 'nowhere', addr: entry.addr } : { kind: 'site', site: cached };
+    }
+    return { kind: 'loading', addr: entry.addr };
+  }, [shown, snapshot]);
 
   // 4. tab title.
   useEffect(() => {

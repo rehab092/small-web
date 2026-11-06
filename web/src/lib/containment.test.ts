@@ -80,6 +80,13 @@ describe('buildSrcDoc', () => {
     expect(buildSrcDoc('<p>x</p>', { ...opts, restoreY: 733.6 })).toContain('"y":734');
   });
 
+  it('keeps retrying the restore until layout settles, and yields to the user', () => {
+    // Regression: a single scrollTo at DOMContentLoaded/load clamped to 0 because the
+    // document was not tall enough yet, so Back never restored the position.
+    expect(doc).toContain('requestAnimationFrame(step)');
+    expect(doc).toContain('userMoved');
+  });
+
   it('escapes a hostile title so it cannot break out of <title>', () => {
     const hostile = buildSrcDoc('<p>x</p>', { ...opts, title: '</title><script>alert(1)</script>' });
     expect(hostile).not.toContain('</title><script>alert(1)');
