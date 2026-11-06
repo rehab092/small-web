@@ -1,4 +1,11 @@
-import { cleanCss, extractText, sanitizeSiteHtml } from './sanitizer';
+import { SEED_SITES } from '../seed/data/sites';
+import { ALLOWED_TAGS, cleanCss, extractText, sanitizeSiteHtml } from './sanitizer';
+
+/** Names of every tag (open or close) that appears in the markup, outside <style> bodies. */
+function tagNames(html: string): string[] {
+  const markup = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '<style></style>');
+  return [...markup.matchAll(/<\/?([a-z][a-z0-9-]*)/gi)].map((m) => m[1].toLowerCase());
+}
 
 /** Each payload must come out with none of the dangerous parts. */
 const PAYLOADS: Array<[name: string, html: string]> = [
@@ -72,6 +79,46 @@ describe('sanitizeSiteHtml', () => {
     for (const m of out.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
       expect(m[1]).not.toMatch(/[<\\]|url\s*\(|@import/i);
     }
+  });
+
+  describe('document-structure tags (a bare <body> used to survive with its attributes stripped)', () => {
+    it('drops a stray <body onload> instead of leaving a bare <body> in the page', () => {
+      const out = sanitizeSiteHtml('<body onload="alert(1)"><p>x</p></body>');
+      expect(out).toBe('<p>x</p>');
+    });
+
+    it('unwraps a whole document, keeping the content and the styles', () => {
+      const out = sanitizeSiteHtml(
+        '<!doctype html><html lang="en" onclick="x"><head><title>Secret title</title><meta charset="utf-8"><style>p{color:red}</style></head><body class="a" style="position:fixed"><p>hi</p></body></html>',
+      );
+      expect(tagNames(out)).toEqual(['style', 'style', 'p', 'p']); // open + close counted by tagNames
+      expect(out).toContain('<p>hi</p>');
+      expect(out).toContain('p{color:red}');
+      expect(out).not.toMatch(/<(html|head|body|title)\b/i);
+      expect(out).not.toContain('Secret title'); // the title text must not leak into the page
+    });
+
+    it('drops <title> and <head> placed in the middle of the body', () => {
+      const out = sanitizeSiteHtml('<p>a</p><title>sneaky</title><head><p>b</p></head><p>c</p>');
+      expect(out).toBe('<p>a</p><p>b</p><p>c</p>');
+    });
+
+    it('cannot reach the frame root elements through attributes on stray html/body tags', () => {
+      const out = sanitizeSiteHtml('<html class="x" id="y" style="background:red"><body id="z" class="w"><p>t</p></body></html>');
+      expect(out).toBe('<p>t</p>');
+    });
+
+    it('only ever emits allowlisted tags, for every hostile payload and every seed page', () => {
+      const allowed = new Set(ALLOWED_TAGS);
+      const inputs = [...PAYLOADS.map(([, html]) => html), ...SEED_SITES.map((s) => s.html)];
+      for (const html of inputs) {
+        for (const tag of tagNames(sanitizeSiteHtml(html))) expect(allowed).toContain(tag);
+      }
+    });
+
+    it('does not allow any of html, head, body or title', () => {
+      for (const tag of ['html', 'head', 'body', 'title']) expect(ALLOWED_TAGS).not.toContain(tag);
+    });
   });
 
   it('keeps ordinary prose, headings, lists, tables and plain links', () => {

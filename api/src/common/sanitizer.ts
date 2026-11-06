@@ -9,8 +9,14 @@ import sanitizeHtml from 'sanitize-html';
 
 export const MAX_HTML_LENGTH = 100_000;
 
-const ALLOWED_TAGS = [
-  'html', 'head', 'body', 'title', 'style',
+/**
+ * Pages are fragments. html/head/body/title are deliberately NOT allowed: the web app
+ * places the markup inside the <body> of its own frame document, where a stray <html> or
+ * <body> start tag would merge its attributes onto the frame's real root elements, and a
+ * <title> is just a second copy of the site's title field.
+ */
+export const ALLOWED_TAGS = [
+  'style',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'hr', 'div', 'span', 'section',
   'article', 'header', 'footer', 'main', 'nav', 'aside', 'figure', 'figcaption',
   'blockquote', 'pre', 'code', 'em', 'strong', 'b', 'i', 'u', 's', 'small', 'sub',
@@ -64,7 +70,8 @@ export function sanitizeSiteHtml(html: string): string {
     allowedSchemesAppliedToAttributes: ['href'],
     allowProtocolRelative: false,
     disallowedTagsMode: 'discard',
-    nonTextTags: ['script', 'style', 'textarea', 'option', 'noscript', 'iframe', 'object', 'embed', 'template'],
+    // 'title' is dropped with its text, so removing the tag does not leave its text in the page
+    nonTextTags: ['script', 'style', 'textarea', 'option', 'noscript', 'iframe', 'object', 'embed', 'template', 'title'],
     allowedStyles: undefined,
     transformTags: {
       a: (tagName, attribs) => {
