@@ -53,7 +53,20 @@ export interface BridgeReadyMessage {
   frame: string;
   type: 'ready';
 }
-export type BridgeMessage = BridgeLinkMessage | BridgeScrollMessage | BridgeReadyMessage;
+/** A browser shortcut pressed while focus is inside the page (keys never reach the parent otherwise). */
+export interface BridgeKeyMessage {
+  sw: typeof BRIDGE_VERSION;
+  frame: string;
+  type: 'key';
+  action: 'back' | 'forward' | 'address';
+}
+export type BridgeMessage =
+  | BridgeLinkMessage
+  | BridgeScrollMessage
+  | BridgeReadyMessage
+  | BridgeKeyMessage;
+
+const KEY_ACTIONS = new Set(['back', 'forward', 'address']);
 
 /**
  * Validate a raw `message` event payload from the iframe. Returns the typed
@@ -73,6 +86,9 @@ export function parseBridgeMessage(data: unknown, frame: string): BridgeMessage 
     case 'scroll':
       if (typeof m.y !== 'number' || !Number.isFinite(m.y) || m.y < 0 || m.y > 1e8) return null;
       return { sw: BRIDGE_VERSION, frame, type: 'scroll', y: Math.round(m.y) };
+    case 'key':
+      if (typeof m.action !== 'string' || !KEY_ACTIONS.has(m.action)) return null;
+      return { sw: BRIDGE_VERSION, frame, type: 'key', action: m.action as BridgeKeyMessage['action'] };
     case 'ready':
       return { sw: BRIDGE_VERSION, frame, type: 'ready' };
     default:
@@ -161,6 +177,13 @@ document.addEventListener('click',function(ev){
   if(href&&href.length<=C.max)send({type:'link',href:href});
 },true);
 document.addEventListener('submit',function(ev){ev.preventDefault();},true);
+document.addEventListener('keydown',function(ev){
+  var a=null;
+  if(ev.altKey&&!ev.ctrlKey&&!ev.metaKey&&!ev.shiftKey){
+    if(ev.key==='ArrowLeft')a='back';else if(ev.key==='ArrowRight')a='forward';
+  }else if((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&!ev.shiftKey&&String(ev.key).toLowerCase()==='l'){a='address';}
+  if(a){ev.preventDefault();send({type:'key',action:a});}
+},true);
 var queued=false;
 window.addEventListener('scroll',function(){
   if(queued)return;queued=true;

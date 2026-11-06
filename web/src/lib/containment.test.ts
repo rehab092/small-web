@@ -87,6 +87,11 @@ describe('buildSrcDoc', () => {
     expect(doc).toContain('userMoved');
   });
 
+  it('forwards only the browser shortcuts out of the page', () => {
+    expect(doc).toContain("send({type:'key',action:a})");
+    expect(doc).toContain("a='back'");
+  });
+
   it('escapes a hostile title so it cannot break out of <title>', () => {
     const hostile = buildSrcDoc('<p>x</p>', { ...opts, title: '</title><script>alert(1)</script>' });
     expect(hostile).not.toContain('</title><script>alert(1)');
@@ -121,6 +126,12 @@ describe('parseBridgeMessage', () => {
     expect(parseBridgeMessage({ ...good, type: 'ready' }, 'frame-123')?.type).toBe('ready');
   });
 
+  it('accepts only the three shortcut actions', () => {
+    for (const action of ['back', 'forward', 'address']) {
+      expect(parseBridgeMessage({ ...good, type: 'key', action }, 'frame-123')).toEqual({ ...good, type: 'key', action });
+    }
+  });
+
   it('drops extra fields instead of passing them along', () => {
     const m = parseBridgeMessage({ ...good, type: 'link', href: 'a.zz', evil: 'x' }, 'frame-123');
     expect(m).not.toHaveProperty('evil');
@@ -138,6 +149,9 @@ describe('parseBridgeMessage', () => {
     ['link with non-string href', { ...good, type: 'link', href: { toString: 1 } }],
     ['empty href', { ...good, type: 'link', href: '' }],
     ['huge href', { ...good, type: 'link', href: 'a'.repeat(5000) }],
+    ['key with an unknown action', { ...good, type: 'key', action: 'navigate' }],
+    ['key without an action', { ...good, type: 'key' }],
+    ['key with a non-string action', { ...good, type: 'key', action: ['back'] }],
     ['scroll NaN', { ...good, type: 'scroll', y: NaN }],
     ['scroll Infinity', { ...good, type: 'scroll', y: Infinity }],
     ['scroll negative', { ...good, type: 'scroll', y: -1 }],
