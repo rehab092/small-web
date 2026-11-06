@@ -15,7 +15,11 @@ cp api/.env.example api/.env        # MONGO_URI, PORT, CORS_ORIGIN
 cp web/.env.example web/.env.local  # NEXT_PUBLIC_API_URL
 ```
 
-If `MONGO_URI` is unset the API (and the seed) start an in-memory MongoDB for development.
+With a real MongoDB, set `MONGO_URI` in `api/.env`. Without one, start the local development database first (it listens on 27018 and keeps its data in `api/.mongo-data`), and leave `MONGO_URI` unset:
+
+```bash
+npm run dev:db -w api
+```
 
 ## Run
 

@@ -8,7 +8,7 @@ All ids are **stable slugs** (never Mongo ObjectIds) so they survive a re-seed a
 
 Every error is JSON: `{ "statusCode": number, "error": string, "message": string }`.
 
-Validation failures (400) add `fields`, a map of field name → list of messages, so forms can show them inline:
+Validation failures (400) add `fields`, a map of field name → list of messages, so forms can show them inline. **All** invalid fields are reported in one response, not just the first:
 
 ```json
 { "statusCode": 400, "error": "Bad Request", "message": "Validation failed",
@@ -18,6 +18,7 @@ Validation failures (400) add `fields`, a map of field name → list of messages
 | Status | Meaning |
 |---|---|
 | 400 | validation failed (`fields` present) |
+| 403 | `PUT /sites/:address` by someone who is not the site's author |
 | 404 | nowhere / unknown person |
 | 409 | address already published |
 | 413 | request body over 1 MB |
@@ -115,7 +116,7 @@ Limits: `title` 1-120 chars; `html` 1-100 000 chars; `authorId` must be a person
 `400` validation · `409` address taken (`message: "address already published"`).
 
 ### `PUT /sites/:address` — replace
-**Edit = replace in place.** Same body minus `address`: `{ title, html, authorId }`; `authorId` must match the site's author (no accounts, so this is a courtesy check, not security). Bumps `revision`, sets `updatedAt`, keeps `createdAt`. `200 SiteDto` · `404` · `400`.
+**Edit = replace in place.** Same body minus `address`: `{ title, html, authorId }`; `authorId` must match the site's author (no accounts, so this is a courtesy check, not security). Bumps `revision`, sets `updatedAt`, keeps `createdAt`. `200 SiteDto` · `404` · `400` · `403` (`authorId` is not the site's author).
 Visits reference the *address*, not a revision, so history stays valid across edits.
 
 ### `GET /search?q=…`
