@@ -27,6 +27,13 @@ interface Loaded {
   nextCursor: string | null;
 }
 
+/** The server's answer to a filter: matches across the WHOLE history, paged by cursor. */
+interface Remote extends Loaded {
+  q: string;
+}
+
+const FILTER_DELAY_MS = 300;
+
 /** Text with the parts matching `query` marked, as plain nodes. */
 function Marked({ text, query }: { text: string; query: string }) {
   return (
@@ -48,18 +55,38 @@ function useMinuteClock(): Date {
   return now;
 }
 
+/** `value`, but only once it has stopped changing for `ms` (immediately when cleared). */
+function useDebounced(value: string, ms: number): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    if (value === '') {
+      setDebounced('');
+      return;
+    }
+    const timer = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return debounced;
+}
+
 /**
  * One person's history, newest first, grouped by day, loaded page by page as
  * the list is scrolled. Pages already loaded are kept per history entry, so
  * returning here shows the list as it was left, at the same scroll position.
- * The filter works on what is loaded; while it is active the list keeps loading
- * further pages as you reach the end, so a match deeper in the history is found.
+ *
+ * The filter matches across the whole history, not just the rows loaded so far:
+ * once typing pauses it is sent to the server (GET /people/:id/visits?q=) and the
+ * answer is paged the same way. Until the answer arrives, the loaded rows are
+ * filtered instantly on the client, so typing never feels stalled.
  */
 export function HistoryView({ entryId, person, personName, scroll, cache, onOpen, saveScroll }: Props) {
   const key = `history:${entryId}`;
   const filterKey = `history-filter:${entryId}`;
+  const remoteKey = `history-remote:${entryId}`;
   const [loaded, setLoaded] = useState<Loaded | null>((cache.get(key) as Loaded) ?? null);
   const [filter, setFilterState] = useState<string>((cache.get(filterKey) as string) ?? '');
+  const [remote, setRemote] = useState<Remote | null>((cache.get(remoteKey) as Remote) ?? null);
+  const [remoteStatus, setRemoteStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -67,14 +94,20 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
   const inFlight = useRef(false);
   const loadedRef = useRef(loaded);
   loadedRef.current = loaded;
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
   const now = useMinuteClock();
   useScrollMemory(scroller, scroll, saveScroll, loaded !== null);
+
+  const trimmed = filter.trim();
+  const debounced = useDebounced(trimmed, FILTER_DELAY_MS);
 
   const setFilter = (value: string) => {
     setFilterState(value);
     cache.set(filterKey, value);
   };
 
+  // --- the unfiltered history, paged ---------------------------------------
   const loadNext = useCallback(
     (signal?: AbortSignal) => {
       const current = loadedRef.current;
@@ -111,25 +144,100 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
     if (!loadedRef.current) loadNext();
   }, [loadNext]);
 
+  // --- the filtered history, asked of the server ----------------------------
+  useEffect(() => {
+    if (!debounced) {
+      setRemote(null);
+      cache.delete(remoteKey);
+      setRemoteStatus('idle');
+      return;
+    }
+    const cached = remoteRef.current;
+    if (cached && cached.q === debounced) {
+      setRemoteStatus('idle'); // restored from this entry's cache (Back)
+      return;
+    }
+    const ctrl = new AbortController();
+    setRemoteStatus('loading');
+    api
+      .visits(person, null, ctrl.signal, 50, debounced)
+      .then((page) => {
+        const next: Remote = { q: debounced, items: page.items, nextCursor: page.nextCursor };
+        cache.set(remoteKey, next);
+        setRemote(next);
+        setRemoteStatus('idle');
+      })
+      .catch((err: unknown) => {
+        if ((err as Error).name === 'AbortError') return;
+        setRemote(null);
+        setRemoteStatus('error');
+      });
+    return () => ctrl.abort();
+  }, [debounced, person, cache, remoteKey]);
+
+  /** Next page of the matches (never the unfiltered list). */
+  const loadNextRemote = useCallback(() => {
+    const current = remoteRef.current;
+    if (!current || current.nextCursor === null || inFlight.current) return;
+    inFlight.current = true;
+    setLoading(true);
+    api
+      .visits(person, current.nextCursor, undefined, 50, current.q)
+      .then((page) => {
+        if (remoteRef.current?.q !== current.q) return; // the filter changed meanwhile
+        const next: Remote = { q: current.q, items: [...current.items, ...page.items], nextCursor: page.nextCursor };
+        cache.set(remoteKey, next);
+        remoteRef.current = next;
+        setRemote(next);
+      })
+      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : 'Could not load more matches.'))
+      .finally(() => {
+        inFlight.current = false;
+        setLoading(false);
+      });
+  }, [cache, person, remoteKey]);
+
+  // --- what is shown ----------------------------------------------------------
+  const filtering = trimmed !== '';
+  const remoteReady = filtering && remote !== null && remote.q === trimmed;
+  const clientOverlay = useMemo(() => filterVisits(loaded?.items ?? [], filter), [loaded, filter]);
+  const shown = !filtering ? (loaded?.items ?? []) : remoteReady ? remote.items : clientOverlay;
+  const hasMore = !filtering
+    ? loaded !== null && loaded.nextCursor !== null
+    : remoteReady && remote.nextCursor !== null;
+  const loadMore = filtering ? loadNextRemote : loadNext;
+
   // infinite scroll: fetch the next page when the sentinel nears the viewport
-  const hasMore = loaded ? loaded.nextCursor !== null : false;
   useEffect(() => {
     const node = sentinel.current;
     const root = scroller.current;
     if (!node || !root || !hasMore || error) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) loadNext();
+        if (entries.some((e) => e.isIntersecting)) loadMore();
       },
       { root, rootMargin: '300px' },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, loadNext, loaded, error, filter]);
+  }, [hasMore, loadMore, shown, error]);
 
-  const shown = useMemo(() => filterVisits(loaded?.items ?? [], filter), [loaded, filter]);
   const groups = useMemo(() => groupVisitsByDay(shown, now), [shown, now]);
-  const filtering = filter.trim() !== '';
+
+  let note = '';
+  if (filtering) {
+    if (remoteReady) {
+      note = `${remote.items.length}${hasMore ? '+' : ''} ${remote.items.length === 1 ? 'visit matches' : 'visits match'} across the whole history`;
+    } else if (remoteStatus === 'error') {
+      note = `The whole history could not be searched; showing matches among the ${loaded?.items.length ?? 0} loaded visits`;
+    } else {
+      note = 'Searching the whole history…';
+    }
+  }
+  const nothingMatches =
+    filtering &&
+    shown.length === 0 &&
+    ((remoteReady && !hasMore) || (remoteStatus === 'error' && !(loaded && loaded.nextCursor !== null)));
 
   return (
     <div className="page-scroll" ref={scroller}>
@@ -137,7 +245,7 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
         <p className="eyebrow">History</p>
         <h1 tabIndex={-1}>
           Where {personName} has been
-          {loaded && <span className="count">{loaded.items.length}{hasMore ? '+' : ''}</span>}
+          {loaded && <span className="count">{loaded.items.length}{loaded.nextCursor !== null ? '+' : ''}</span>}
         </h1>
 
         <div className="history__filter" role="search">
@@ -159,15 +267,13 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
           />
         </div>
         <p className="history__filter-note" aria-live="polite">
-          {filtering && loaded
-            ? `${shown.length} of ${loaded.items.length} loaded ${loaded.items.length === 1 ? 'visit' : 'visits'} match${hasMore ? '; more load as you reach the end' : ''}`
-            : ''}
+          {note}
         </p>
 
         {error && (
           <p className="field-error">
             {error}{' '}
-            <button type="button" className="link-btn" onClick={() => loadNext()}>
+            <button type="button" className="link-btn" onClick={() => loadMore()}>
               Retry
             </button>
           </p>
@@ -176,10 +282,10 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
         {loaded && loaded.items.length === 0 && (
           <p className="muted">Nothing here yet. Pages you visit will show up in this list.</p>
         )}
-        {filtering && loaded && loaded.items.length > 0 && shown.length === 0 && !hasMore && (
+        {nothingMatches && (
           <div className="empty">
             <h2>No visits match</h2>
-            <p>Nothing in this history contains “{filter.trim()}”. Try another word.</p>
+            <p>Nothing in this history contains “{trimmed}”. Try another word.</p>
             <button type="button" className="btn" onClick={() => setFilter('')}>
               Clear the filter
             </button>
@@ -218,12 +324,15 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
         ))}
 
         <div ref={sentinel} className="sentinel" aria-hidden="true" />
-        {loaded && loading && <p className="muted center">Loading more…</p>}
-        {loaded && !hasMore && loaded.items.length > 0 && !(filtering && shown.length === 0) && (
+        {loading && (loaded || remoteReady) && <p className="muted center">Loading more…</p>}
+        {!filtering && loaded && loaded.nextCursor === null && loaded.items.length > 0 && (
           <p className="muted center">That is the beginning.</p>
         )}
+        {filtering && remoteReady && !hasMore && shown.length > 0 && (
+          <p className="muted center">That is every match.</p>
+        )}
         {hasMore && !loading && (
-          <button type="button" className="btn center-btn" onClick={() => loadNext()}>
+          <button type="button" className="btn center-btn" onClick={() => loadMore()}>
             Load more
           </button>
         )}
