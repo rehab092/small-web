@@ -146,10 +146,9 @@ test.describe('the Nowhere page', () => {
   test('"Search for it" runs a search for the name', async ({ page }) => {
     await openAs(page, 'wen-zhao');
     await typeAddress(page, 'ghostship.zz');
-    await page.getByRole('button', { name: 'Search for “ghostship.zz”' }).click();
-    await expect(page.getByLabel('Search query')).toHaveValue('ghostship.zz');
-    // whatever the search finds, it ran for the address and reported on it
-    await expect(page.getByRole('status').filter({ hasText: '“ghostship.zz”' })).toBeVisible();
+    await page.getByRole('button', { name: 'Search for “ghostship”' }).click();
+    await expect(page.getByLabel('Search query')).toHaveValue('ghostship'); // the name, not the .zz every address shares
+    await expect(page.getByText('No pages match “ghostship”.')).toBeVisible();
     await backButton(page).click();
     await expect(nowhere(page)).toBeVisible(); // Back returns to the Nowhere stop
   });
@@ -176,7 +175,7 @@ test.describe('history list', () => {
     const all = await rows(page).count();
 
     await page.getByLabel('Filter history').fill('iron');
-    await expect(page.locator('.history__filter-note')).toContainText('loaded visits match');
+    await expect(page.locator('.history__filter-note')).toContainText('across the whole history');
     const matching = await rows(page).count();
     expect(matching).toBeGreaterThan(0);
     expect(matching).toBeLessThan(all + 1);
@@ -287,14 +286,19 @@ test.describe('search states', () => {
 });
 
 test.describe('publish messages', () => {
-  test('a page that is empty once sanitized gets a clear explanation', async ({ page }) => {
+  test('a page that is empty once sanitized is explained, by the server, before publishing', async ({ page }) => {
     await openAs(page, 'ines-varga', 'about:publish');
     await page.getByPlaceholder('tidepool.zz', { exact: true }).fill(uniqueAddress('empty'));
     await page.getByPlaceholder('What the page is called').fill('Nothing to see');
     await page.locator('textarea').fill('<script>alert(1)</script><form><input name=a></form>');
-    await publishSubmit(page).click();
-    await expect(page.getByText(/Nothing readable is left once scripts, forms, images/)).toBeVisible();
-    await expect(publishSubmit(page)).toBeEnabled(); // the form stays usable
+    // the verdict comes from the server's preview: the one definition of "nothing left"
+    await expect(page.getByText(/Nothing readable is left once scripts, forms, images/).first()).toBeVisible();
+    await expect(publishSubmit(page)).toBeDisabled();
+
+    // adding something readable lifts it
+    await page.locator('textarea').fill('<script>alert(1)</script><p>Now there is text.</p>');
+    await expect(page.getByText(/Nothing readable is left/)).toHaveCount(0);
+    await expect(publishSubmit(page)).toBeEnabled();
   });
 });
 

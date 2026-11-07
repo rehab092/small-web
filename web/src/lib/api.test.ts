@@ -85,6 +85,30 @@ describe('api client', () => {
     });
   });
 
+  it('asks the server to preview html and returns its sanitized result', async () => {
+    const dto = { html: '<p>x</p>', text: 'x', empty: false, message: null };
+    const { api, calls } = fakeApi(() => jsonResponse(200, dto));
+    await expect(api.preview('<p onclick=a>x</p><script>1</script>')).resolves.toEqual(dto);
+    expect(calls[0]?.url).toBe('http://api.test/sites/preview');
+    expect(calls[0]?.init?.method).toBe('POST');
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ html: '<p onclick=a>x</p><script>1</script>' });
+  });
+
+  it('reports an over-long preview as a 400 with the html field', async () => {
+    const { api } = fakeApi(() => jsonResponse(400, { message: 'Validation failed', fields: { html: ['too long'] } }));
+    const err = await api.preview('x').catch((e: unknown) => e);
+    expect((err as ApiError).status).toBe(400);
+    expect((err as ApiError).fields).toEqual({ html: ['too long'] });
+  });
+
+  it('sends a history filter to the server, trimmed, together with the cursor', async () => {
+    const { api, calls } = fakeApi(() => jsonResponse(200, { items: [], nextCursor: null }));
+    await api.visits('ines-varga', 'abc', undefined, 50, '  salt & pepper ');
+    expect(calls[0]?.url).toBe('http://api.test/people/ines-varga/visits?limit=50&cursor=abc&q=salt+%26+pepper');
+    await api.visits('ines-varga', null, undefined, 50, '   ');
+    expect(calls[1]?.url).toBe('http://api.test/people/ines-varga/visits?limit=50'); // a blank filter is no filter
+  });
+
   it('passes the cursor when paging history', async () => {
     const { api, calls } = fakeApi(() => jsonResponse(200, { items: [], nextCursor: null }));
     await api.visits('ines-varga', 'abc', undefined, 25);

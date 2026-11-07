@@ -35,6 +35,17 @@ export interface PublishInput {
 
 export type ReplaceInput = Omit<PublishInput, 'address'>;
 
+/** What publishing `html` would store, computed by the server without storing anything. */
+export interface PreviewDto {
+  /** Exactly what POST /sites would store: the sanitized page. */
+  html: string;
+  text: string;
+  /** True when publishing would be refused because nothing readable survives. */
+  empty: boolean;
+  /** The server's wording for the empty case, null otherwise. */
+  message: string | null;
+}
+
 export interface VisitsPage {
   items: VisitDto[];
   nextCursor: string | null;
@@ -97,6 +108,10 @@ export function createApi(fetchImpl: FetchLike, baseUrl: string) {
 
     publish: (input: PublishInput) => json<SiteDto>('/sites', jsonInit('POST', input)),
 
+    /** Sanitize `html` the way publishing would, without publishing. Debounce callers: it is real work. */
+    preview: (html: string, signal?: AbortSignal) =>
+      json<PreviewDto>('/sites/preview', { ...jsonInit('POST', { html }), signal }),
+
     replace: (address: string, input: ReplaceInput) =>
       json<SiteDto>(`/sites/${encodeURIComponent(address)}`, jsonInit('PUT', input)),
 
@@ -106,9 +121,11 @@ export function createApi(fetchImpl: FetchLike, baseUrl: string) {
         { signal },
       ),
 
-    visits: (personId: string, cursor: string | null, signal?: AbortSignal, limit = 50) => {
+    /** One page of a person's history. `q`, when given, filters across the WHOLE history on the server. */
+    visits: (personId: string, cursor: string | null, signal?: AbortSignal, limit = 50, q?: string) => {
       const qs = new URLSearchParams({ limit: String(limit) });
       if (cursor) qs.set('cursor', cursor);
+      if (q && q.trim()) qs.set('q', q.trim());
       return json<VisitsPage>(`/people/${encodeURIComponent(personId)}/visits?${qs}`, { signal });
     },
 

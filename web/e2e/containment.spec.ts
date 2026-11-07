@@ -57,7 +57,7 @@ async function expectChromeIntact(page: Page, titleBefore: string, urlBefore: st
 }
 
 test.describe('hostile pages are contained', () => {
-  test('a malicious preview cannot alert, navigate, phone home or cover the chrome', async ({ page }) => {
+  test('a malicious preview shows only what the server would keep, and cannot alert, navigate or cover the chrome', async ({ page }) => {
     const seen = watch(page);
     await openAs(page, PERSON, 'about:publish');
     const titleBefore = await page.title();
@@ -67,17 +67,20 @@ test.describe('hostile pages are contained', () => {
     await page.locator('textarea').fill(HOSTILE);
     await expect(page.locator(SITE_FRAME)).toBeVisible();
     const frame = await siteFrame(page);
-    await expect(frame.locator('#mark')).toBeVisible();
+    await expect(frame.locator('h1')).toBeVisible();
 
-    // inline scripts and event handlers never ran (CSP), so nothing they do is visible
+    // the preview is the server's sanitized page: none of the dangerous markup is there at all
+    const body = await frame.evaluate(() => document.body.innerHTML);
+    expect(body).not.toMatch(/<script/i);
+    expect(body).not.toMatch(/\son\w+\s*=/i);
+    expect(body).not.toMatch(/<(iframe|object|embed|form|base|link)\b/i);
+    expect(body).not.toMatch(/javascript:/i);
+    // the full-screen overlay was defanged to something that cannot cover anything
+    expect(await frame.locator('.cover').evaluate((el) => getComputedStyle(el).position)).not.toBe('fixed');
+
+    // and nothing that was in the source ran
     expect(await frame.evaluate(() => document.title)).not.toBe('PWNED');
     expect(await frame.evaluate(() => document.body.getAttribute('data-pwned'))).toBeNull();
-
-    // The page's full-frame cover swallows real pointer clicks (it is contained, so that is
-    // all it can do), so fire the clicks directly at the form button and the links.
-    await frame.locator('#submit').dispatchEvent('click');
-    await frame.locator('#js').dispatchEvent('click');
-    await frame.locator('#out').dispatchEvent('click');
     await page.waitForTimeout(500);
 
     expect(seen.dialogs).toEqual([]);
@@ -90,9 +93,9 @@ test.describe('hostile pages are contained', () => {
     await openAs(page, PERSON, 'about:publish');
     const urlBefore = page.url();
     await page.getByPlaceholder('What the page is called').fill('Probe');
-    await page.locator('textarea').fill('<h1 id="mark">probe</h1>');
+    await page.locator('textarea').fill('<h1>probe</h1>');
     const frame = await siteFrame(page);
-    await expect(frame.locator('#mark')).toBeVisible();
+    await expect(frame.locator('h1')).toBeVisible();
 
     // exactly allow-scripts: never same-origin, top-navigation, forms, popups or modals
     expect(await page.locator(SITE_FRAME).getAttribute('sandbox')).toBe('allow-scripts');

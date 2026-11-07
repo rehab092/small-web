@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, type PreviewDto } from '@/lib/api';
 import { normalizeAddress } from '@/lib/address';
 import { friendlyFieldError } from '@/lib/field-errors';
 import { useScrollMemory } from '@/lib/use-scroll-memory';
@@ -31,6 +31,9 @@ interface Draft {
 
 const MAX_HTML = 100_000;
 const MAX_TITLE = 120;
+const PREVIEW_DELAY_MS = 350;
+/** Used only if the server ever answers empty without wording; its own message wins. */
+const EMPTY_FALLBACK = 'nothing left to show after removing disallowed content';
 
 const STARTER = `<h1>Salt marsh notes</h1>
 <p>Low tide at the marsh edge, and the channels fill with light.
@@ -38,9 +41,9 @@ Read about the <a href="tidepool.zz">tidepool</a> next door.</p>
 <style>h1{color:#1f5fbf}</style>`;
 
 /**
- * The publish form. The preview renders exactly what was typed inside the same
- * sandboxed frame every other page uses; the server sanitizes on publish and
- * the sanitized result is shown again once it is live. The draft is kept per
+ * The publish form. The preview is what the server would store: it sanitizes the
+ * typed HTML (POST /sites/preview) and the result runs in the same sandboxed frame
+ * every other page uses, so what is previewed is what is published. The draft is kept per
  * history entry, so Back/Forward never lose a half-written page.
  */
 export function PublishView({ entryId, people, person, prefill, scroll, cache, onVisit, saveScroll }: Props) {
@@ -55,7 +58,10 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
         authorId: authors.find((a) => a.id === person)?.id ?? authors[0]?.id ?? '',
       },
   );
-  const [previewHtml, setPreviewHtml] = useState(draft.html);
+  // What the server says publishing `previewFor` would store (see the preview effect below).
+  const [preview, setPreview] = useState<PreviewDto | null>(null);
+  const [previewFor, setPreviewFor] = useState<string | null>(null);
+  const [previewStatus, setPreviewStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [submitting, setSubmitting] = useState(false);
   const [fields, setFields] = useState<Record<string, string[]>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -68,10 +74,46 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
     cache.set(key, draft);
   }, [cache, key, draft]);
 
+  // The preview is the server's own sanitizing of what was typed (POST /sites/preview), so
+  // it is exactly what publishing would store. Debounced because it is real work, and a
+  // newer keystroke abandons the request in flight.
   useEffect(() => {
-    const t = setTimeout(() => setPreviewHtml(draft.html), 250);
-    return () => clearTimeout(t);
+    const html = draft.html;
+    if (html.trim() === '') {
+      setPreview(null);
+      setPreviewFor(null);
+      setPreviewStatus('idle');
+      return;
+    }
+    if (html.length > MAX_HTML) {
+      setPreviewStatus('idle'); // the character counter already says it is too long
+      return;
+    }
+    const ctrl = new AbortController();
+    setPreviewStatus('loading');
+    const timer = setTimeout(() => {
+      api
+        .preview(html, ctrl.signal)
+        .then((result) => {
+          setPreview(result);
+          setPreviewFor(html);
+          setPreviewStatus('idle');
+        })
+        .catch((err: unknown) => {
+          if ((err as Error).name === 'AbortError') return;
+          setPreviewStatus('error');
+        });
+    }, PREVIEW_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
   }, [draft.html]);
+
+  // The server's verdict on the html as it stands now. This is the ONE definition of
+  // "nothing readable is left": the client never decides it, it only shows it.
+  const previewIsCurrent = previewFor === draft.html;
+  const serverSaysEmpty = previewIsCurrent && preview?.empty === true;
 
   const normalized = normalizeAddress(draft.address);
   const set = (patch: Partial<Draft>) => {
@@ -95,7 +137,7 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
   if (draft.title.length > MAX_TITLE) clientErrors.title = `Keep the title under ${MAX_TITLE} characters`;
   if (draft.html.length > MAX_HTML) clientErrors.html = `Pages are limited to ${MAX_HTML.toLocaleString()} characters`;
   const complete = Boolean(normalized && draft.title.trim() && draft.html.trim() && draft.authorId);
-  const valid = complete && Object.keys(clientErrors).length === 0;
+  const valid = complete && Object.keys(clientErrors).length === 0 && !serverSaysEmpty;
 
   const fail = (err: unknown) => {
     if (err instanceof ApiError) {
@@ -129,7 +171,11 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
 
   const fieldError = (name: string) => {
     const fromApi = fields[name]?.[0];
-    return fromApi ? friendlyFieldError(name, fromApi) : clientErrors[name];
+    if (fromApi) return friendlyFieldError(name, fromApi);
+    if (name === 'html' && serverSaysEmpty) {
+      return friendlyFieldError('html', preview?.message ?? EMPTY_FALLBACK);
+    }
+    return clientErrors[name];
   };
 
   if (authors.length === 0) {
@@ -257,14 +303,33 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
 
           <section className="preview" aria-label="Preview">
             <h2 className="section-title">Preview</h2>
-            <div className="preview__frame">
-              {previewHtml.trim() ? (
-                <SiteFrame html={previewHtml} title={draft.title || 'Preview'} label="Page preview" />
-              ) : (
+            <div
+              className={previewStatus === 'loading' ? 'preview__frame preview__frame--updating' : 'preview__frame'}
+              aria-busy={previewStatus === 'loading'}
+            >
+              {!draft.html.trim() ? (
                 <p className="muted pad">Start typing HTML to see it here.</p>
+              ) : serverSaysEmpty ? (
+                <p className="field-error pad" role="status">
+                  {friendlyFieldError('html', preview?.message ?? EMPTY_FALLBACK)}
+                </p>
+              ) : preview && !preview.empty ? (
+                <SiteFrame html={preview.html} title={draft.title || 'Preview'} label="Page preview" />
+              ) : previewStatus === 'error' ? (
+                <p className="muted pad">The preview could not be loaded. Is the server running?</p>
+              ) : (
+                <p className="muted pad">Preparing the preview…</p>
+              )}
+              {previewStatus === 'loading' && preview && (
+                <span className="preview__badge" aria-hidden="true">
+                  Updating…
+                </span>
               )}
             </div>
-            <p className="field__hint">Shown in the same sandbox as every page. Links do nothing here.</p>
+            <p className="field__hint">
+              Shown exactly as it will be published: the server first removes scripts, forms, images and
+              external files, then the page runs in the same sandbox as every other. Links do nothing here.
+            </p>
           </section>
         </div>
 

@@ -1199,3 +1199,23 @@ kbd {
 [tabindex='-1']:focus {
   outline: none;
 }
+
+/* publish preview: dimmed while the server is sanitizing the latest keystrokes */
+.preview__frame {
+  position: relative;
+}
+.preview__frame--updating > .site-frame {
+  opacity: 0.65;
+  transition: opacity var(--dur) var(--ease);
+}
+.preview__badge {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  padding: 2px var(--sp-2);
+  border-radius: 100px;
+  background: var(--ink);
+  color: #fff;
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
