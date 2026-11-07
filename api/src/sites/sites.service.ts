@@ -69,6 +69,16 @@ export class SitesService implements OnModuleInit {
   }
 
   /**
+   * Does a site exist at this address? Unlike get(), a missing site is an ordinary answer (found:false), so a
+   * client can check existence without a 404 showing up in its console. A malformed address is still a 400.
+   */
+  async resolve(rawAddress: unknown): Promise<{ address: string; found: boolean }> {
+    const norm = normalizeAddress(rawAddress);
+    if (!norm.valid) throw fieldErrors({ address: [ADDRESS_HINT] });
+    return { address: norm.address, found: (await this.model.exists({ address: norm.address })) !== null };
+  }
+
+  /**
    * Dry run of publishing: exactly what would be stored for this HTML, with no database access.
    * Same inspectPage() as publish and replace, so the preview cannot disagree with the result.
    */

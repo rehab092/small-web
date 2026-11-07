@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { intParam } from '../sites/sites.controller';
+import { clampedLimit } from '../sites/sites.controller';
 import { RecordVisitDto } from './visits.dto';
 import { VisitsService } from './visits.service';
 
@@ -8,9 +8,15 @@ import { VisitsService } from './visits.service';
 export class VisitsController {
   constructor(private readonly visits: VisitsService) {}
 
+  /**
+   * limit is clamped to [1, 100]; q (optional) filters the whole history server-side.
+   * q is typed `unknown` on purpose: as `string`, the ValidationPipe would turn a repeated `?q=a&q=b`
+   * into the single literal text "a,b", which silently matches nothing. The first value is used instead.
+   */
   @Get()
-  list(@Param('id') id: string, @Query('limit') limit?: string, @Query('cursor') cursor?: string) {
-    return this.visits.list(id, intParam('limit', limit, 50, 1, 100), typeof cursor === 'string' && cursor ? cursor : undefined);
+  list(@Param('id') id: string, @Query('limit') limit?: string, @Query('cursor') cursor?: string, @Query('q') q?: unknown) {
+    const filter = Array.isArray(q) ? q[0] : q;
+    return this.visits.list(id, clampedLimit(limit, 50, 1, 100), typeof cursor === 'string' && cursor ? cursor : undefined, typeof filter === 'string' ? filter : undefined);
   }
 
   @Post()

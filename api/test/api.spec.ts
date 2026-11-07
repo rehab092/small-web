@@ -52,9 +52,17 @@ describe('API (seeded database)', () => {
       const res = await http().get('/sites?limit=3&offset=2').expect(200);
       expect(res.body.items).toHaveLength(3);
     });
-    it('rejects a bad limit with a field error', async () => {
-      const res = await http().get('/sites?limit=0').expect(400);
-      expect(res.body.fields.limit).toBeDefined();
+    it('rejects a limit that is not an integer with a field error', async () => {
+      for (const bad of ['abc', '1.5', '1e3x', 'NaN']) {
+        const res = await http().get(`/sites?limit=${bad}`).expect(400);
+        expect(res.body.fields.limit).toBeDefined();
+      }
+    });
+    it('clamps an out-of-range limit to [1, 100] instead of failing', async () => {
+      expect((await http().get('/sites?limit=0').expect(200)).body.items).toHaveLength(1);
+      expect((await http().get('/sites?limit=-5').expect(200)).body.items).toHaveLength(1);
+      const big = (await http().get('/sites?limit=100000').expect(200)).body;
+      expect(big.items.length).toBe(Math.min(100, big.total));
     });
   });
 
@@ -273,7 +281,10 @@ describe('API (seeded database)', () => {
       expect(page.total).toBe(all.total);
       expect(page.results).toHaveLength(1);
       expect(page.results[0].address).toBe(all.results[1].address);
-      await http().get('/search?q=salt&limit=51').expect(400);
+      // an out-of-range limit is clamped to [1, 50], not rejected
+      expect((await http().get('/search?q=salt&limit=51').expect(200)).body.results.length).toBeLessThanOrEqual(50);
+      expect((await http().get('/search?q=salt&limit=0').expect(200)).body.results).toHaveLength(1);
+      await http().get('/search?q=salt&limit=abc').expect(400);
     });
   });
 
@@ -333,13 +344,21 @@ describe('API (seeded database)', () => {
       expect(odile.some((v) => ids.has(v.id))).toBe(false);
     });
 
-    it('answers 404 for an unknown person and 400 for a bad cursor or limit', async () => {
+    it('answers 404 for an unknown person and 400 for a bad cursor or a non-integer limit', async () => {
       await http().get('/people/nobody/visits').expect(404);
       await http().post('/people/nobody/visits').send({ address: 'tidepool.zz', via: 'typed' }).expect(404);
       await http().get('/people/wen-zhao/visits?cursor=garbage').expect(400);
-      await http().get('/people/wen-zhao/visits?limit=0').expect(400);
-      await http().get('/people/wen-zhao/visits?limit=101').expect(400);
+      await http().get('/people/wen-zhao/visits?limit=abc').expect(400);
     });
+
+    it('no longer rejects an out-of-range limit: 200 and 101 succeed, 0 and -3 give one item (was a 400)', async () => {
+      const tomas = (limit: string) => http().get(`/people/tomas-reyes/visits?limit=${limit}`).expect(200);
+      const total = (await allVisits('tomas-reyes')).length;
+      expect((await tomas('200')).body.items).toHaveLength(Math.min(100, total));
+      expect((await tomas('101')).body.items).toHaveLength(Math.min(100, total));
+      expect((await tomas('0')).body.items).toHaveLength(1);
+      expect((await tomas('-3')).body.items).toHaveLength(1);
+    }); // the ceiling of exactly 100 is proved in reviewer-api.spec.ts, with a person who has more than 100 visits
 
     describe('POST', () => {
       const person = 'odile-mercier';

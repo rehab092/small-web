@@ -15,6 +15,8 @@ Validation failures (400) add `fields`, a map of field name → list of messages
   "fields": { "address": ["address must be a name ending in .zz, e.g. tidepool.zz"] } }
 ```
 
+**`limit` is clamped, not rejected.** On every route that has one (`/sites`, `/search`, `/people/:id/visits`), a `limit` outside the route's range is silently pulled into it: `limit=200` on visits returns 100 items, `limit=0` or `limit=-3` returns 1. Only a `limit` that is not an integer at all (`abc`, `1.5`) is a `400` with `fields.limit`. `offset` is still strict.
+
 | Status | Meaning |
 |---|---|
 | 400 | validation failed (`fields` present) |
@@ -112,11 +114,16 @@ Optional `?role=author|browser`. `200 PersonDto[]`, sorted by name.
 `200 PersonDto` · `404` unknown id.
 
 ### `GET /sites`
-Directory for a start page. Query: `limit` (1-100, default 50), `offset` (default 0). `200 { total: number; items: SiteSummaryDto[] }`, sorted by address.
+Directory for a start page. Query: `limit` (default 50, clamped to 1–100), `offset` (default 0). `200 { total: number; items: SiteSummaryDto[] }`, sorted by address.
 
 ### `GET /sites/:address`
 `:address` is URL-encoded and normalized server-side. `200 SiteDto`.
 **`404` = nowhere**, including addresses that are syntactically invalid: `{ "statusCode": 404, "error": "Not Found", "message": "nowhere", "address": "<normalized or raw>" }`. The web app shows its Nowhere page and still records a visit.
+
+### `GET /resolve?address=<address>` — does a site exist here?
+Use this for **existence checks**, so a normal Nowhere does not put a red `404` line in the browser console. `GET /sites/:address` stays a `404` for direct fetches.
+`200 { "address": string, "found": boolean }`, where `address` is the normalized form (`TidePool.ZZ/reading` → `tidepool.zz`). Both `found: true` and `found: false` are `200`.
+A malformed address (empty, not a `.zz` host, whitespace, a missing or repeated `address`) is `400` with `fields.address`, like every other route. Note the difference from `GET /sites/:address`, which answers `404` for those. Reads only: it records no visit.
 
 ### `POST /sites` — publish
 Body:
@@ -138,6 +145,8 @@ Body: `{ "html": string }`. Anything else sent (`address`, `title`, `authorId`) 
   message: string | null; // when empty: "nothing left to show after removing disallowed content" (the same wording publish returns in fields.html); otherwise null
 }
 ```
+**One definition of "empty".** The rule lives in one pure function, `hasVisibleContent` in `api/src/common/page-content.ts` (a letter, digit, punctuation mark or symbol must survive sanitizing; blank and zero-width characters do not count). The web app does **not** import or copy it: it asks this endpoint (`empty`, `message`) and, if publish still answers `400`, shows `fields.html` verbatim. That keeps the client and the server from ever having two predicates or two wordings.
+
 It runs the very same function as publish and replace (`inspectPage`), so the preview cannot differ from the published page: render `html` in the sandboxed frame and it is what readers will see. **Do not re-implement the sanitizer or the "empty" rule on the client**; ask this endpoint (debounce the calls).
 
 - Empty, whitespace-only, script-only or style-only html is a normal answer: `200 { empty: true }`, never an error.
@@ -148,7 +157,7 @@ It runs the very same function as publish and replace (`inspectPage`), so the pr
 Visits reference the *address*, not a revision, so history stays valid across edits.
 
 ### `GET /search?q=…`
-Query: `q` (trimmed, max 200 chars), `limit` (1-50, default 20), `offset` (default 0).
+Query: `q` (trimmed, max 200 chars), `limit` (default 20, clamped to 1–50), `offset` (default 0).
 Full-text over title (weight 10), address (5) and body text (1), ranked by relevance.
 `200`:
 ```ts
@@ -162,7 +171,15 @@ Snippets are **structured segments, never HTML**, so React renders them with no 
 Empty or whitespace-only `q` → `200 { query: "", total: 0, results: [] }` (not an error). No hits → `total: 0, results: []`.
 
 ### `GET /people/:id/visits` — history, newest first
-Query: `limit` (1-100, default 50), `cursor` (opaque, from the previous page). `200 { items: VisitDto[]; nextCursor: string | null }`. Keep requesting with `nextCursor` until it is `null` (infinite scroll). Grouping by day is done client-side in the browser's timezone. `404` unknown person.
+Query: `limit` (default 50; **clamped to 1–100**, so `limit=200` returns 100, never a `400`), `cursor` (opaque, from the previous page), `q` (optional filter, below). `200 { items: VisitDto[]; nextCursor: string | null }`. Keep requesting with `nextCursor` until it is `null` (infinite scroll). Grouping by day is done client-side in the browser's timezone. `404` unknown person; `400` for a bad `cursor` or a non-integer `limit`.
+
+**`?q=` filters the person's whole history on the server**, not just the pages already loaded:
+- `q` is trimmed and cut at 200 characters, then split on whitespace; at most the first 8 words count. Empty or whitespace-only `q` behaves exactly like no `q`. If `q` is repeated, the first value is used.
+- A visit matches when **every word** matches at least one of: the visited **address**, the page's **current title**, how the visit happened (**via**: `typed`, `link`, `back`, …), or the word **`nowhere`** (which matches visits with `found: false`).
+- Matching is case-insensitive **substring** matching and is literal: `.`, `(`, `*`, `$` and the like are ordinary characters, never patterns. `nowhere` also matches any substring of itself (`now`).
+- Order and paging are unchanged: newest first, same `nextCursor`. A cursor stays valid for as long as the same `q` is sent with it.
+
+Example: `GET /people/tomas-reyes/visits?q=salt%20link&limit=20` → his visits to a page with "salt" in its address or title that he arrived at by following a link.
 
 ### `POST /people/:id/visits` — record an arrival
 Body: `{ "address": string, "via": Via, "requestId"?: string }`.

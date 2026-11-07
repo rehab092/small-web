@@ -5,6 +5,7 @@ import { ADDRESS_HINT, normalizeAddress } from '../common/address';
 import { fieldErrors } from '../common/errors';
 import { PeopleService } from '../people/people.service';
 import { Site } from '../sites/site.schema';
+import { escapeRegExp, filterWords, matchesNowhere } from './visit-filter';
 import { Visit } from './visit.schema';
 import { RecordVisitDto, VisitDto, VisitPageDto } from './visits.dto';
 
@@ -36,14 +37,21 @@ export class VisitsService implements OnModuleInit {
     await this.visits.init();
   }
 
-  async list(personId: string, limit: number, cursor?: string): Promise<VisitPageDto> {
+  /**
+   * One page of a person's history, newest first. With `q`, only visits where every word matches the
+   * address, the page's title, the way of arriving, or "nowhere"; the whole history is searched, not
+   * just what has been loaded, and the cursor stays valid for as long as the same q is sent.
+   */
+  async list(personId: string, limit: number, cursor?: string, q?: string): Promise<VisitPageDto> {
     await this.assertPerson(personId);
-    const filter: Record<string, unknown> = { personId };
+    const clauses: Record<string, unknown>[] = [];
+    for (const word of filterWords(q)) clauses.push(await this.wordClause(word));
     if (cursor) {
       const c = decodeCursor(cursor);
       if (!c) throw fieldErrors({ cursor: ['cursor is not valid'] });
-      filter.$or = [{ at: { $lt: c.at } }, { at: c.at, _id: { $lt: c.id } }];
+      clauses.push({ $or: [{ at: { $lt: c.at } }, { at: c.at, _id: { $lt: c.id } }] });
     }
+    const filter: Record<string, unknown> = clauses.length > 0 ? { personId, $and: clauses } : { personId };
     const rows = (await this.visits.find(filter).sort({ at: -1, _id: -1 }).limit(limit + 1).lean()) as VisitRow[];
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
@@ -51,6 +59,17 @@ export class VisitsService implements OnModuleInit {
       items: await this.toDtos(page),
       nextCursor: rows.length > limit && last ? encodeCursor(last.at, last._id) : null,
     };
+  }
+
+  /** A Mongo condition that is true for visits matching this one word (see visit-filter.ts). */
+  private async wordClause(word: string): Promise<Record<string, unknown>> {
+    const rx = { $regex: escapeRegExp(word), $options: 'i' };
+    const options: Record<string, unknown>[] = [{ address: rx }, { via: rx }];
+    // The title lives on the site, not the visit: find the sites whose title matches, then match their address.
+    const sites = await this.sites.find({ title: rx }, { address: 1 }).limit(1000).lean();
+    if (sites.length > 0) options.push({ address: { $in: sites.map((s) => s.address) } });
+    if (matchesNowhere(word)) options.push({ found: false });
+    return { $or: options };
   }
 
   /** Returns the visit and whether it was newly created (false = replayed requestId). */
