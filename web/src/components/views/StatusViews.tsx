@@ -1,5 +1,6 @@
 'use client';
 
+import { searchTermForAddress } from '@/lib/address';
 import { useDelayedFlag } from '@/lib/delayed-flag';
 
 /** Full-page states: Nowhere (no such address), load failure, loading. */
@@ -15,6 +16,7 @@ export function NowhereView({
   onSearch: (query: string) => void;
   onHome: () => void;
 }) {
+  const term = searchTermForAddress(addr);
   return (
     <div className="page-scroll">
       <div className="page status" aria-live="polite">
@@ -33,8 +35,8 @@ export function NowhereView({
           existed. The visit is still in your history.
         </p>
         <div className="form__actions">
-          <button type="button" className="btn btn--primary" onClick={() => onSearch(addr)}>
-            Search for “{addr}”
+          <button type="button" className="btn btn--primary" onClick={() => onSearch(term)}>
+            Search for “{term}”
           </button>
           <button type="button" className="btn" onClick={() => onPublish(addr)}>
             Publish a site here

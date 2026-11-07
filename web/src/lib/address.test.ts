@@ -9,6 +9,7 @@ import {
   publishAddr,
   resolveTyped,
   searchAddr,
+  searchTermForAddress,
 } from './address';
 
 describe('normalizeAddress (vectors from docs/api.md)', () => {
@@ -134,5 +135,19 @@ describe('addressParts', () => {
     expect(addressParts('example.com')).toBeNull();
     expect(addressParts('TidePool.zz')).toBeNull(); // only the normalized form is styled
     expect(addressParts('about:search?q=tide')).toBeNull();
+  });
+});
+
+describe('searchTermForAddress', () => {
+  it('drops the .zz and keeps inner dots', () => {
+    expect(searchTermForAddress('ghostship.zz')).toBe('ghostship');
+    expect(searchTermForAddress('old.tidepool.zz')).toBe('old.tidepool');
+    expect(searchTermForAddress('a.b-c.zz')).toBe('a.b-c');
+  });
+
+  it('only strips a real .zz suffix, and only once', () => {
+    expect(searchTermForAddress('tidepoolzz')).toBe('tidepoolzz');
+    expect(searchTermForAddress('zz.zz')).toBe('zz');
+    expect(searchTermForAddress('x.zz.zz')).toBe('x.zz');
   });
 });

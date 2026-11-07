@@ -88,6 +88,15 @@ export function internalPage(addr: string): InternalPage | null {
   return null;
 }
 
+/**
+ * What to search for when an address leads nowhere: the host label without the
+ * `.zz`, inner dots kept (`old.tidepool.zz` -> `old.tidepool`). The TLD is left out
+ * because every address ends in it, so searching it would match every site.
+ */
+export function searchTermForAddress(addr: string): string {
+  return addr.replace(/\.zz$/, '');
+}
+
 export function isInternalAddr(addr: string): boolean {
   return addr.startsWith('about:');
 }
