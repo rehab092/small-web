@@ -189,7 +189,8 @@ test.describe('hostile pages are contained', () => {
   test('links in a page: addresses are followed, real-web links are shown but never followed', async ({ page }) => {
     const seen = watch(page);
     await openAs(page, PERSON, 'about:publish');
-    await page.getByPlaceholder('tidepool.zz', { exact: true }).fill(uniqueAddress('linky'));
+    const address = uniqueAddress('linky');
+    await page.getByPlaceholder('tidepool.zz', { exact: true }).fill(address);
     await page.getByPlaceholder('What the page is called').fill('Links');
     await page
       .locator('textarea')
@@ -198,7 +199,9 @@ test.describe('hostile pages are contained', () => {
       );
     await publishSubmit(page).click();
     await page.getByRole('button', { name: /^Visit / }).click();
-    await expect(page.locator(SITE_FRAME)).toBeVisible();
+    // Wait until the page has really arrived (the URL's addr follows a moment after the frame appears).
+    // Reading page.url() as soon as the frame was visible raced with that update on a slower machine.
+    await expectShowing(page, address);
     const here = page.url();
 
     await page.frameLocator(SITE_FRAME).locator('#out').click();
