@@ -162,7 +162,7 @@ test.describe('the Nowhere page', () => {
     await backButton(page).click();
     await expect(nowhere(page)).toBeVisible();
     await page.getByRole('button', { name: 'Go home' }).click();
-    await expect(page.getByRole('heading', { name: /A few hundred one-page sites/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /A small web of one-page sites/ })).toBeVisible();
   });
 });
 
@@ -271,7 +271,7 @@ test.describe('search states', () => {
     await expect(page.locator('.result').first()).toBeVisible();
     await backButton(page).click();
     await page.getByRole('button', { name: 'Browse the directory' }).click();
-    await expect(page.getByRole('heading', { name: /A few hundred one-page sites/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /A small web of one-page sites/ })).toBeVisible();
   });
 
   test('several words that find nothing suggest each word on its own', async ({ page }) => {

@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Small Web',
-  description: 'A browser for a few hundred one-page sites.',
+  description: 'A browser for a small web of one-page sites.',
 };
 
 export const viewport: Viewport = {
