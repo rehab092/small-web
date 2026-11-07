@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Tests use the MongoDB service container, so skip the 600 MB mongod download at install time.
+  MONGOMS_DISABLE_POSTINSTALL: "1"
+  # Browsers are installed explicitly, and only in the e2e job.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+jobs:
+  test:
+    name: typecheck, unit tests, build (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Typecheck api
+        run: npm run typecheck -w api
+      - name: Typecheck web
+        run: npm run typecheck -w web
+      - name: Unit and API tests (api, against the MongoDB service)
+        run: npm test -w api
+        env:
+          TEST_MONGO_URI: mongodb://127.0.0.1:27017
+      - name: Unit tests (web)
+        run: npm test -w web
+      - name: Runner script tests
+        run: npm run test:scripts
+      - name: Build api and web
+        run: npm run build
+
+  e2e:
+    name: end-to-end (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+      - name: Playwright
+        run: npm run test:e2e -w web
+        env:
+          E2E_MONGO_URI: mongodb://127.0.0.1:27017/small-web-e2e
+      - name: Keep the Playwright traces when something failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  fresh-clone:
+    name: fresh clone, docker compose, no .env
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Start MongoDB with docker compose
+        run: docker compose up -d --wait
+      - name: Seed with no .env at all
+        run: npm run seed 2>&1 | tee seed1.log
+      - name: Seeding again gives identical counts
+        run: |
+          npm run seed 2>&1 | tee seed2.log
+          diff <(grep '^seeded' seed1.log) <(grep '^seeded' seed2.log)
+          diff <(grep '^database now holds' seed1.log) <(grep '^database now holds' seed2.log)
+          grep -q '^database now holds 5 people, 10 sites' seed2.log
+      - name: Build and start the API with no .env
+        run: |
+          npm run build -w api
+          nohup npm run start -w api > api.log 2>&1 &
+          for i in $(seq 1 30); do curl -fs http://localhost:4000/health && break; sleep 1; done
+          curl -fs http://localhost:4000/health | grep -q '"db":"up"'
+      - name: Query the running API
+        run: |
+          curl -fs http://localhost:4000/sites/tidepool.zz | grep -q '"address":"tidepool.zz"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000/sites/old-wells.zz)" = 404
+          curl -fs 'http://localhost:4000/search?q=tide' | node -e "const r=JSON.parse(require('fs').readFileSync(0,'utf8'));if(r.results[0].address!=='tidepool.zz')throw new Error('tide did not rank tidepool.zz first: '+r.results[0].address);console.log('tide ->',r.results[0].address)"
+      - name: Show the API log when something failed
+        if: failure()
+        run: cat api.log || true

@@ -1,5 +1,7 @@
 # The Small Web
 
+[![CI](https://github.com/rehab092/small-web/actions/workflows/ci.yml/badge.svg)](https://github.com/rehab092/small-web/actions/workflows/ci.yml)
+
 Next.js browser (`web/`) + NestJS API (`api/`) + MongoDB. Node 20 or newer (`nvm use` reads `.nvmrc`).
 
 ## Install
