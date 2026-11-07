@@ -590,7 +590,12 @@ h2.section-title,
   padding: 0;
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  /* min() so a single column never asks for more than the screen has */
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+}
+/* a long address must clip inside its card, not widen the grid track */
+.cards > li {
+  min-width: 0;
 }
 .card {
   display: flex;
@@ -918,6 +923,8 @@ kbd {
   transform: translateY(1px);
 }
 .card {
+  min-width: 0;
+  max-width: 100%;
   box-shadow: var(--shadow-1);
 }
 .card:hover {
@@ -1162,7 +1169,8 @@ kbd {
     width: 54px;
   }
   .cards {
-    grid-template-columns: 1fr;
+    /* minmax(0, ...): a bare 1fr has a content-sized minimum and stretches around long text */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 400px) {

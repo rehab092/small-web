@@ -306,15 +306,22 @@ test.describe('small screens', () => {
   test.use({ viewport: { width: 375, height: 760 } });
 
   const noSideways = async (page: Page, label: string) => {
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    // The body never scrolls (overflow: hidden); a page scrolls inside .page-scroll. So a
+    // sideways scroll is any scroll container whose content is wider than its box.
+    const overflow = await page.evaluate(() => {
+      const containers = [document.documentElement, ...document.querySelectorAll<HTMLElement>('.page-scroll, .viewport')];
+      return Math.max(...containers.map((el) => el.scrollWidth - el.clientWidth));
+    });
     expect(overflow, `${label} scrolls sideways`).toBeLessThanOrEqual(0);
     const wide = await page.evaluate(() => {
       const out: string[] = [];
       document.querySelectorAll<HTMLElement>('.chrome *, .page *').forEach((el) => {
         const r = el.getBoundingClientRect();
         if (r.width <= 0 || r.right <= window.innerWidth + 1) return;
-        // text clipped by an ancestor that itself fits (ellipsis rows) is not visible overflow
+        // text clipped by an ancestor that itself fits (ellipsis rows) is not visible overflow;
+        // the page's own scroll container is not such an ancestor: it is what would scroll
         for (let up = el.parentElement; up; up = up.parentElement) {
+          if (up.classList.contains('page-scroll') || up.classList.contains('viewport')) break;
           const clips = getComputedStyle(up).overflowX !== 'visible';
           if (clips && up.getBoundingClientRect().right <= window.innerWidth + 1) return;
         }
@@ -358,17 +365,54 @@ test.describe('small screens', () => {
     await expect(page.locator('.person__avatar')).toHaveText('W');
   });
 
-  test('long titles and addresses are clipped, never pushed off the screen', async ({ page, request }) => {
-    const address = uniqueAddress('x');
-    const longTitle = 'W'.repeat(110);
-    const res = await request.post(`${API_URL}/sites`, {
-      data: { address, title: longTitle, html: '<h1>long</h1><p>some words</p>', authorId: 'ines-varga' },
+  /**
+   * An address as long as the rules allow (100 characters, 63 per label) and one of the
+   * 57-character length QA found. Made unique so reruns never collide.
+   */
+  const longAddress = (length: number) => {
+    const unique = `u${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+    const tail = '.zz';
+    const first = 'a'.repeat(Math.min(60, length - tail.length - 1 - unique.length - 1));
+    const rest = length - tail.length - first.length - 1;
+    return `${first}.${unique.padEnd(rest, 'b')}${tail}`;
+  };
+
+  for (const length of [57, 100]) {
+    test(`a ${length}-character address and a very long title never push the screen sideways`, async ({ page, request }) => {
+      const address = longAddress(length);
+      expect(address).toHaveLength(length);
+      const res = await request.post(`${API_URL}/sites`, {
+        data: {
+          address,
+          title: 'W'.repeat(110),
+          html: '<h1>long</h1><p>some words</p>',
+          authorId: 'ines-varga',
+        },
+      });
+      expect(res.status()).toBe(201);
+
+      // the directory (where QA found it: a bare 1fr grid track stretched around the address)
+      await openAs(page, 'ines-varga');
+      await expect(page.locator('.card').filter({ hasText: address.slice(0, 20) }).first()).toBeVisible();
+      await noSideways(page, `home with a ${length}-character address`);
+
+      // typing the long address (the bar clips it), then the page it leads to
+      await typeAddress(page, address);
+      await expectShowing(page, address);
+      await noSideways(page, `the page at a ${length}-character address`);
+
+      // history lists it, search finds it: both must clip too
+      await tool(page, 'History').click();
+      await expect(rows(page).first()).toContainText(address.slice(0, 20));
+      await noSideways(page, `history with a ${length}-character address`);
+      await tool(page, 'Search').click();
+      const input = page.getByLabel('Search query');
+      await input.fill(address.slice(0, 24));
+      await input.press('Enter');
+      await page.waitForTimeout(500);
+      await noSideways(page, `search for a ${length}-character address`);
     });
-    expect(res.status()).toBe(201);
-    await openAs(page, 'ines-varga');
-    await expect(page.locator('.card').first()).toBeVisible();
-    await noSideways(page, 'home with a very long title');
-  });
+  }
 });
 
 test.describe('loading feels calm', () => {
