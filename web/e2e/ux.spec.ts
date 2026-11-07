@@ -99,23 +99,32 @@ test.describe('keyboard', () => {
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
+    const readStop = () =>
+      page.evaluate(() => {
+        const el = document.activeElement as HTMLElement;
+        const style = getComputedStyle(el);
+        const wrapper = el.closest('.address, .person'); // the ring can sit on the control's wrapper
+        const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null;
+        const ring =
+          style.outlineStyle !== 'none' ||
+          (wrapperStyle !== null &&
+            (wrapperStyle.boxShadow !== 'none' || wrapperStyle.outlineStyle !== 'none'));
+        const name = el.getAttribute('aria-label') ?? el.getAttribute('title') ?? (el.textContent?.trim() || el.tagName);
+        return { name, ring };
+      });
+
     const stops: Array<{ name: string; ring: boolean }> = [];
     for (let i = 0; i < 9; i++) {
       await page.keyboard.press('Tab');
-      stops.push(
-        await page.evaluate(() => {
-          const el = document.activeElement as HTMLElement;
-          const style = getComputedStyle(el);
-          const wrapper = el.closest('.address, .person'); // the ring can sit on the control's wrapper
-          const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null;
-          const ring =
-            style.outlineStyle !== 'none' ||
-            (wrapperStyle !== null &&
-              (wrapperStyle.boxShadow !== 'none' || wrapperStyle.outlineStyle !== 'none'));
-          const name = el.getAttribute('aria-label') ?? el.getAttribute('title') ?? (el.textContent?.trim() || el.tagName);
-          return { name, ring };
-        }),
-      );
+      let stop = await readStop();
+      if (!stop.ring) {
+        // The page frame's ring is a class the app sets from its focus handler, a moment after focus
+        // arrives. Sampling the instant Tab returns raced that on a slower runner (passed locally, failed
+        // on CI). Give it up to 2 s; a control that never gets a ring still fails below, by name.
+        await expect.poll(async () => (await readStop()).ring, { timeout: 2000 }).toBe(true).catch(() => undefined);
+        stop = await readStop();
+      }
+      stops.push(stop);
     }
     const names = stops.map((s) => s.name);
     // the chrome in reading order; Forward is skipped because it is disabled
