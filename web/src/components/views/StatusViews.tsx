@@ -4,11 +4,6 @@ import { useDelayedFlag } from '@/lib/delayed-flag';
 
 /** Full-page states: Nowhere (no such address), load failure, loading. */
 
-/** `ghostship.zz` -> `ghostship`: what someone probably meant to look for. */
-function searchTermFor(addr: string): string {
-  return addr.replace(/\.zz$/, '').replace(/[.-]+/g, ' ').trim();
-}
-
 export function NowhereView({
   addr,
   onPublish,
@@ -20,7 +15,6 @@ export function NowhereView({
   onSearch: (query: string) => void;
   onHome: () => void;
 }) {
-  const term = searchTermFor(addr);
   return (
     <div className="page-scroll">
       <div className="page status" aria-live="polite">
@@ -30,7 +24,7 @@ export function NowhereView({
           <circle cx="60" cy="60" r="4" fill="currentColor" />
         </svg>
         <p className="eyebrow">Nowhere</p>
-        <h1>There is nothing at this address</h1>
+        <h1 tabIndex={-1}>There is nothing at this address</h1>
         <p>
           <span className="status__address">{addr}</span>
         </p>
@@ -39,11 +33,9 @@ export function NowhereView({
           existed. The visit is still in your history.
         </p>
         <div className="form__actions">
-          {term && (
-            <button type="button" className="btn btn--primary" onClick={() => onSearch(term)}>
-              Search for “{term}”
-            </button>
-          )}
+          <button type="button" className="btn btn--primary" onClick={() => onSearch(addr)}>
+            Search for “{addr}”
+          </button>
           <button type="button" className="btn" onClick={() => onPublish(addr)}>
             Publish a site here
           </button>
@@ -73,7 +65,7 @@ export function ErrorView({
     <div className="page-scroll">
       <div className="page status" role="alert">
         <p className="eyebrow">Could not load</p>
-        <h1>{addr} did not load</h1>
+        <h1 tabIndex={-1}>{addr} did not load</h1>
         <p className="lede">{message}</p>
         <div className="form__actions">
           <button type="button" className="btn btn--primary" onClick={onRetry}>

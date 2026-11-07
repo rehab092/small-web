@@ -180,7 +180,7 @@ test.describe('hostile pages are contained', () => {
     expect(seen.dialogs).toEqual([]);
     expect(seen.attackerRequests).toEqual([]);
     await expectChromeIntact(page, await page.title(), urlBefore);
-    expect(titleBefore).toBe('Small Web');
+    expect(titleBefore).toMatch(/Small Web/);
   });
 
   test('links in a page: addresses are followed, real-web links are shown but never followed', async ({ page }) => {

@@ -146,9 +146,10 @@ test.describe('the Nowhere page', () => {
   test('"Search for it" runs a search for the name', async ({ page }) => {
     await openAs(page, 'wen-zhao');
     await typeAddress(page, 'ghostship.zz');
-    await page.getByRole('button', { name: 'Search for “ghostship”' }).click();
-    await expect(page.getByLabel('Search query')).toHaveValue('ghostship');
-    await expect(page.getByText('No pages match “ghostship”.')).toBeVisible();
+    await page.getByRole('button', { name: 'Search for “ghostship.zz”' }).click();
+    await expect(page.getByLabel('Search query')).toHaveValue('ghostship.zz');
+    // whatever the search finds, it ran for the address and reported on it
+    await expect(page.getByRole('status').filter({ hasText: '“ghostship.zz”' })).toBeVisible();
     await backButton(page).click();
     await expect(nowhere(page)).toBeVisible(); // Back returns to the Nowhere stop
   });

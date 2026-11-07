@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   HOME_ADDR,
   classifyHref,
@@ -11,6 +11,7 @@ import {
   searchAddr,
 } from '@/lib/address';
 import { useBrowser } from '@/lib/use-browser';
+import { isEditable } from '@/lib/shortcuts';
 import { useShortcuts } from '@/lib/use-shortcuts';
 import { SiteFrame } from './SiteFrame';
 import { Toolbar } from './Toolbar';
@@ -31,6 +32,26 @@ export function BrowserApp() {
     onForward: b.forward,
   });
   const { notice, dismissNotice } = b;
+
+  // On arrival (a link, Back, Forward, a typed address) focus moves to the new page, as in
+  // any browser: the frame of a site, the heading of a built-in page. A screen reader then
+  // hears the page, and keyboard use continues inside it. Never while someone is typing in a
+  // field, never for reloads, restores or person switches, and not on the Search page,
+  // whose box takes focus itself.
+  const focusedSeq = useRef(0);
+  useEffect(() => {
+    const snap = b.snapshot;
+    if (!snap || b.page.kind === 'loading' || focusedSeq.current === snap.seq) return;
+    focusedSeq.current = snap.seq;
+    if (snap.cause !== 'navigate' && snap.cause !== 'back' && snap.cause !== 'forward') return;
+    if (isEditable(document.activeElement as HTMLElement | null)) return;
+    if (b.page.kind === 'internal' && internalPage(b.page.addr) === 'search') return;
+    const target =
+      b.page.kind === 'site'
+        ? document.querySelector<HTMLElement>('iframe.site-frame')
+        : document.querySelector<HTMLElement>('main h1');
+    target?.focus({ preventScroll: true });
+  }, [b.snapshot, b.page]);
 
   // The page frame cannot match :focus-visible when focus is inside its own document, so
   // remember (a) whether the last input was the keyboard and (b) whether the frame holds

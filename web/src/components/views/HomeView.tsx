@@ -49,7 +49,7 @@ export function HomeView({ entryId, scroll, cache, onOpen, onGo, saveScroll }: P
     <div className="page-scroll" ref={scroller}>
       <div className="page home">
         <p className="eyebrow">The Small Web</p>
-        <h1>A few hundred one-page sites, written by strangers.</h1>
+        <h1 tabIndex={-1}>A few hundred one-page sites, written by strangers.</h1>
         <p className="lede">
           Type an address like <code>tidepool.zz</code> in the bar above, follow links from page to
           page, or search for something somebody wrote.

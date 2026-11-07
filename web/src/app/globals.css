@@ -1194,3 +1194,8 @@ kbd {
   outline: 3px solid var(--ring);
   outline-offset: -3px;
 }
+
+/* headings take focus on arrival (programmatically); no ring is needed on them */
+[tabindex='-1']:focus {
+  outline: none;
+}

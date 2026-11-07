@@ -19,7 +19,7 @@
  *    and no visit, and rapid clicking ends on the last page shown.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from './api';
 import {
   HOME_ADDR,
@@ -35,6 +35,7 @@ import {
   type Snapshot,
 } from './session';
 import { Navigator, type PageResult } from './navigator';
+import { pageTitle } from './page-title';
 import { canBack, canForward } from './history-stack';
 import type { PersonDto, SiteDto, Via } from './types';
 
@@ -227,11 +228,16 @@ export function useBrowser() {
     return { kind: 'loading', addr: entry.addr };
   }, [shown, snapshot]);
 
-  // 4. tab title.
-  useEffect(() => {
-    if (page.kind === 'site') document.title = `${page.site.title} · Small Web`;
-    else if (page.kind === 'nowhere') document.title = 'Nowhere · Small Web';
-    else if (page.kind === 'internal') document.title = 'Small Web';
+  // 4. tab title: computed from the page on screen, set before paint, so there is no
+  // moment where a previous page's title or a generic fallback shows.
+  useLayoutEffect(() => {
+    document.title = pageTitle(
+      page.kind === 'site'
+        ? { kind: 'site', title: page.site.title }
+        : page.kind === 'internal' || page.kind === 'loading'
+          ? { kind: page.kind, addr: page.addr }
+          : { kind: page.kind },
+    );
   }, [page]);
 
   const go = useCallback(

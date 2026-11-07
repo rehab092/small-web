@@ -135,7 +135,7 @@ export function HistoryView({ entryId, person, personName, scroll, cache, onOpen
     <div className="page-scroll" ref={scroller}>
       <div className="page history">
         <p className="eyebrow">History</p>
-        <h1>
+        <h1 tabIndex={-1}>
           Where {personName} has been
           {loaded && <span className="count">{loaded.items.length}{hasMore ? '+' : ''}</span>}
         </h1>

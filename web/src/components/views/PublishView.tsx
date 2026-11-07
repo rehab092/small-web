@@ -147,7 +147,7 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
     <div className="page-scroll" ref={scroller}>
       <div className="page publish">
         <p className="eyebrow">Publish</p>
-        <h1>Put a page on the Small Web</h1>
+        <h1 tabIndex={-1}>Put a page on the Small Web</h1>
 
         <div className="publish__grid">
           <form
@@ -196,6 +196,12 @@ export function PublishView({ entryId, people, person, prefill, scroll, cache, o
                   </option>
                 ))}
               </select>
+              {!authors.some((a) => a.id === person) && (
+                <span className="field__hint" data-testid="author-hint">
+                  {people.find((p) => p.id === person)?.name ?? 'This person'} can browse but is not an
+                  author, so pages are published under one of the authors.
+                </span>
+              )}
               {fieldError('authorId') && <span className="field-error">{fieldError('authorId')}</span>}
             </label>
 
