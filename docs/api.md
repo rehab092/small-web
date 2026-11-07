@@ -30,13 +30,13 @@ Used by every route that takes an address. Rules, applied in order:
 1. trim; collapse inner whitespace → invalid if any whitespace remains
 2. lowercase
 3. strip a leading `http://`, `https://` or `web://`
-4. strip any `?query`, `#fragment`, then all trailing `/`
+4. drop everything from the first `?` or `#` to the end, then everything from the first `/` to the end: **only the host matters**, so `tidepool.zz/reading` is the site `tidepool.zz`. This happens *before* validation, so it can never make an invalid host valid (`example.com/x.zz` stays invalid)
 5. a bare label with no dot (`tidepool`) gets `.zz` appended
 6. **valid** iff it matches `^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+zz$` and is ≤ 100 chars
 
 Anything else (e.g. `example.com`, `a b`, empty) is **not a small-web address**: the web app treats it as an *external link* (shown, never followed) and must not request or record it.
 
-Test vectors (web should re-implement these identically in `web/src/lib/address.ts`):
+Test vectors (the web app re-implements these in `web/src/lib/address.ts`; `api/test/address-parity.spec.ts` runs both implementations over thousands of generated inputs and fails if they ever disagree):
 
 | input | normalized | valid |
 |---|---|---|
@@ -47,9 +47,19 @@ Test vectors (web should re-implement these identically in `web/src/lib/address.
 | `tidepool` | `tidepool.zz` | yes |
 | `tidepool.zz#top` | `tidepool.zz` | yes |
 | `a.b-c.zz` | `a.b-c.zz` | yes |
+| `tidepool.zz/reading` | `tidepool.zz` | yes (path dropped) |
+| `tidepool.zz/about` | `tidepool.zz` | yes (path dropped) |
+| `https://Tidepool.zz/a/b?x#y` | `tidepool.zz` | yes |
+| `tidepool/x` | `tidepool.zz` | yes |
 | `-bad.zz` | — | no |
+| `-bad.zz/ok` | — | no (host is checked, not the path) |
 | `example.com` | — | no (external) |
+| `example.com/x.zz` | — | no (external; a `.zz` path does not rescue it) |
 | `tide pool.zz` | — | no |
+| `a b/c` | — | no (whitespace) |
+| `//x.zz` | — | no (no host) |
+| `/x.zz` | — | no (no host) |
+| `tidepool.zz:80/x` | — | no |
 | `` | — | no |
 | `javascript:alert(1)` | — | no |
 

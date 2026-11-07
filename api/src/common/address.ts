@@ -19,7 +19,9 @@ export function normalizeAddress(input: unknown): NormalizedAddress {
   let a = input.trim().toLowerCase();
   if (/\s/.test(a)) return { address: a, valid: false };
   a = a.replace(/^(?:https?|web):\/\//, '');
-  a = a.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  // A path, query or fragment never changes which site it is: the host routes.
+  // (The host is validated afterwards, so this cannot turn an invalid host valid.)
+  a = a.replace(/[?#].*$/, '').replace(/\/.*$/, '');
   if (a !== '' && !a.includes('.') && /^[a-z0-9-]+$/.test(a)) a = `${a}.zz`;
   const valid = a.length > 0 && a.length <= MAX_LENGTH && ADDRESS_RE.test(a);
   return { address: a, valid };
